@@ -1,0 +1,9 @@
+image: $CI_REGISTRY/vlasami6/fmltest:master
+
+test:
+  script:
+    - meson setup build
+    - meson compile -C build
+    - cppcheck --error-exitcode=1 **.c
+    - env FML="$(readlink -f fml)" FML_REF_BC_INT=/cfml/fml /FMLtest/suite ast_interpret \
+        hello_world.fml

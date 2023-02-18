@@ -20,6 +20,8 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
+	printf("Hello world!\n");
+
 	arena_destroy(&arena);
 
 	return 0;

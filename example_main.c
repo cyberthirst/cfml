@@ -4,8 +4,8 @@
 #include "parser.h"
 
 int main(int argc, char **argv) {
-	if (argc != 2) {
-		fprintf(stderr, "Error: expected one argument\n");
+	if (argc < 2) {
+		fprintf(stderr, "Error: expected at least one argument\n");
 		return 1;
 	}
 

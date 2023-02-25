@@ -1,0 +1,62 @@
+
+function stack() -> object
+begin
+    let arr = array(4, null);
+    let sz = 0;
+    let sz_max = 4;
+    function pop() ->
+    begin
+        if this.sz == 0 then print("error: stack empty\n")
+        else begin
+            this.sz <- this.sz - 1;
+            this.arr[this.sz];
+       end
+    end;
+    function push(e) ->
+    begin
+        if this.sz == this.sz_max then 
+        begin
+            let tmp = 0;
+            let new_arr = array(this.sz_max * 2, null);
+            while tmp < this.sz_max
+            do begin
+                new_arr[tmp] <- this.arr[tmp];
+                tmp <- tmp + 1;
+            end;
+            this.sz_max <- this.sz_max * 2;
+            this.arr <- new_arr;
+        end;
+        this.arr[this.sz] <- e;
+        this.sz <- this.sz + 1;
+    end;
+    function peek() ->
+    begin 
+        if this.sz then this.arr[this.sz - 1] else null;
+    end
+end;
+
+function test_stack() ->
+begin 
+    let my_stack = stack();
+    let tmp = 0;
+    while tmp < 8
+    do begin 
+        my_stack.push(tmp);
+        tmp <- tmp + 1;
+    end;
+    print("peek: ~\n", my_stack.peek());
+    my_stack.pop();
+    my_stack.pop();
+    print("peek: ~\n", my_stack.peek());
+    while tmp != 0 
+    do begin 
+        let pop_output = null;
+        pop_output <- my_stack.pop();
+        print("pop: ~\n", pop_output);
+        tmp <- tmp - 1;
+    end
+end;
+
+test_stack()
+
+

@@ -1,0 +1,125 @@
+function print_i() -> print("I");
+function print_iv() -> print("IV");
+function print_v() -> print("V");
+function print_ix() -> print("IX");
+function print_x() -> print("X");
+function print_xl() -> print("XL");
+function print_l() -> print("L");
+function print_xc() -> print("XC");
+function print_c() -> print("C");
+function print_cd() -> print("CD");
+function print_d() -> print("D");
+function print_cm() -> print("CM");
+function print_m() -> print("M");
+
+function init_num() -> 
+begin
+    let num = array(13, null);
+    num[0] <- 1; 
+    num[1] <- 4; 
+    num[2] <- 5; 
+    num[3] <- 9; 
+    num[4] <- 10; 
+    num[5] <- 40; 
+    num[6] <- 50; 
+    num[7] <- 90; 
+    num[8] <- 100; 
+    num[9] <- 400; 
+    num[10] <- 500; 
+    num[11] <- 900; 
+    num[12] <- 1000; 
+    num
+end;
+
+function init_sym() ->
+begin
+let sym = array(13, null);
+    sym[0] <- print_i;
+    sym[1] <- print_iv;
+    sym[2] <- print_v;
+    sym[3] <- print_ix;
+    sym[4] <- print_x;
+    sym[5] <- print_xl;
+    sym[6] <- print_l;
+    sym[7] <- print_xc;
+    sym[8] <- print_c;
+    sym[9] <- print_cd;
+    sym[10] <- print_d;
+    sym[11] <- print_cm;
+    sym[12] <- print_m;
+    sym
+end;
+
+function ext_dec(number) -> object extends number
+begin
+    let val = number;
+    let num = init_num();
+    let sym = init_sym();
+
+    function print_decimal() ->
+    begin 
+        print("~\n", this.val);
+    end;
+    //algo from: https://www.geeksforgeeks.org/python-program-to-convert-integer-to-roman/
+    function print_roman() ->
+    begin 
+        let number = this.val;
+        //print("number: ~\n", number);
+        let i = 12;
+        while number > 0
+        do begin
+            let div = number / this.num[i]; // num[i]
+            number <- number % this.num[i];
+            //print("number: ~\n", number);
+
+            while div > 0
+            do begin
+               this.sym[i]();
+               div <- div - 1
+            end;
+            i <- i - 1
+        end;    
+        print("\n")
+    end;
+
+    function + (o) -> ext_dec(this.val + o.val);
+
+    function - (o) -> ext_dec(this.val - o.val);
+
+    function / (o) -> ext_dec(this.val / o.val);
+
+    function * (o) -> ext_dec(this.val * o.val);
+
+    function % (o) -> ext_dec(this.val % o.val);
+end;
+
+function test_print(n) ->
+begin
+    n.print_decimal();
+    n.print_roman();
+end;
+
+function test() ->
+begin 
+    let a = init_num();
+    let i = 0;
+    while i != 13
+    do begin
+        test_print(ext_dec(a[i]));
+        i <- i + 1;
+    end; 
+    test_print(ext_dec(666));
+    test_print(ext_dec(14000));
+    let tmp = ext_dec(10);
+    let tmp2 = ext_dec(30);
+    let tmp3 = tmp + tmp2;
+    test_print(tmp3);
+    tmp <- ext_dec(100);
+    tmp2 <- ext_dec(10);
+    tmp3 <- tmp * tmp2;
+    test_print(tmp3);
+    tmp3 <- tmp3 / tmp2;
+    test_print(tmp3);
+end;
+
+test();

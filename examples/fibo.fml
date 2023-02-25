@@ -1,0 +1,28 @@
+
+function fibo(n) ->
+begin
+    let tmp0 = 0;
+    let tmp1 = if n == 0 then 1 else 1;
+    let tmp2 = 0;
+    let tmp_n = n;
+    while  tmp_n > 1
+    do begin
+        tmp2 <- tmp1 + tmp0;
+        tmp0 <- tmp1;
+        tmp1 <- tmp2;
+        tmp_n <- tmp_n - 1;
+    end;
+    print("~th fibo: ~\n", n, tmp1);
+end;
+
+function print_n_fibo(n) ->
+begin
+    let tmp = 0;
+    while tmp != n 
+    do begin
+        fibo(tmp);
+        tmp <- tmp + 1;
+    end;
+end;
+
+print_n_fibo(25);

@@ -1,0 +1,28 @@
+function print_ntime(n, is_space) ->
+begin
+    let tmp = 0;
+    while tmp < n
+    do begin
+        if is_space then print(" ") else print("*");
+        tmp <- tmp + 1;
+    end;
+end;
+
+function triangle(height) ->
+begin
+    let tmp_height = 0;
+    let base_width = (height - 1) * 2 + 1;
+    let spaces = (base_width - tmp_height * 2 + 1) / 2;
+    while tmp_height < height
+    do begin
+        print_ntime(spaces, true);
+        print_ntime(tmp_height * 2 + 1, false);
+        print_ntime(spaces, true);
+        print("\n");
+        tmp_height <- tmp_height + 1;
+        spaces <- (base_width - tmp_height * 2 + 1) / 2;
+    end;
+end;
+
+
+triangle(10)

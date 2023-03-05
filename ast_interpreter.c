@@ -9,37 +9,65 @@ IState* init_interpreter() {
     state->heap->heap_start = malloc(MEM_SZ);
     state->heap->heap_free = state->heap->heap_start;
     state->heap->heap_size = 0;
-    state->stack = malloc(sizeof(Environment) * MAX_STACK_SZ);
-    state->current_env = -1;
-    state->globals = malloc(sizeof(Environment));
-    state->globals->var_cnt = 0;
+    state->envs = malloc(sizeof(Environment) * MAX_ENVS);
+    state->current_env = 0;
     return state;
 }
 
-void add_to_env(Value val, Str name, IState *state) {
-    if (state->current_env == -1) { //global scope
-        if (state->globals->var_cnt == MAX_VARS) {
-            printf("Too many variables in global scope\n");
-            exit(1);
-        }
-        else {
-            size_t var_cnt = state->globals->var_cnt;
-            state->globals->vars[var_cnt].name = name;
-            state->globals->var_cnt++;
-        }
-    
-    } else { //local scope
-        if (state->stack[state->current_env].var_cnt == MAX_VARS) {
-            printf("Too many variables in local scope\n");
-            exit(1);
-        }
-        else {
-            size_t var_cnt = state->stack[state->current_env].var_cnt;
-            state->stack[state->current_env].vars[var_cnt].name = name;
-            state->stack[state->current_env].var_cnt++;
-        }
+void *heap_alloc(Value *val, Heap *heap) {
+    if (heap->heap_size + sizeof(val) > MEM_SZ) {
+        printf("Out of memory\n");
+        exit(1);
+    }
+    else {
+        void *ptr = heap->heap_free;
+        heap->heap_free += sizeof(val);
+        heap->heap_size += sizeof(val);
+        return ptr;
+    }
+}
 
-    }    
+void add_to_env(Value val, Str name, IState *state) {
+    size_t env = state->current_env;
+    if (state->envs[env].var_cnt == MAX_VARS) {
+        printf("Too many variables in local scope\n");
+        exit(1);
+    }
+    else {
+        size_t var_cnt = state->envs[env].var_cnt;
+        state->envs[env].vars[var_cnt].name = name;
+        void *ptr = heap_alloc(&val, state->heap);
+        memcpy(ptr, &val, sizeof(val));
+        state->envs[env].vars[var_cnt].val = ptr;
+        state->envs[env].var_cnt++;
+    }
+}
+
+bool my_str_cmp(Str a, Str b) {
+	return a.len == b.len && memcmp(a.str, b.str, a.len) == 0;
+}
+
+ValueKind *find_in_env(Str name, Environment *env) {
+    for (size_t i = 0; i < env->var_cnt; i++) {
+        if (my_str_cmp(env->vars[i].name, name) == 0) {
+            return env->vars[i].val;
+        }
+    }
+    return NULL;
+}
+
+ValueKind *get_var_ptr(Str name, IState *state) {
+    ValueKind *val;
+    val = find_in_env(name, &state->envs[state->current_env]);
+    if (val != NULL) {
+        return val;
+    }
+    val = find_in_env(name, &state->envs[GLOBAL_ENV_INDEX]);
+    return val;
+}
+
+void assign_var(ValueKind *val, Value new_val, Heap *heap) {
+    memcpy(val, &new_val, sizeof(new_val));
 }
 
 Value interpret(Ast *ast, IState *state) {
@@ -61,12 +89,61 @@ Value interpret(Ast *ast, IState *state) {
             add_to_env(val, definition->name, state);
             return val;
         }
-        //case AST_VARIABLE_ACCESS: {return (Value){};}
-        //case AST_VARIABLE_ASSIGNMENT: {return (Value){};}
-        //case AST_FUNCTION: {return (Value){};}
-        //case AST_FUNCTION_CALL: {return (Value){};}
-        //case AST_PRINT: {return (Value){};}
-        //case AST_BLOCK: {return (Value){};}
+        case AST_VARIABLE_ACCESS: {
+            AstVariableAccess *variable_access = (AstVariableAccess *) ast; 
+            ValueKind *val = get_var_ptr(variable_access->name, state);
+            //TODO convert the ptr to a value
+            return (Value){};
+        }
+        case AST_VARIABLE_ASSIGNMENT: {
+            AstVariableAssignment *va = (AstVariableAssignment *) ast;
+            Value val = interpret(va->value, state);
+            ValueKind *val_ptr = get_var_ptr(va->name, state);
+            assign_var(val_ptr, val, state->heap);
+            return val;
+        }
+        case AST_FUNCTION: {
+            AstFunction *function = (AstFunction *) ast;
+	        return (Value) { .kind = VK_FUNCTION, .function = function };
+        }
+        case AST_FUNCTION_CALL: {
+            AstFunctionCall *fc = (AstFunctionCall *) ast; 
+            Value fun = interpret(fc->function, state);
+            state->current_env++;
+            Value val;
+            for (size_t i = 0; i < fc->argument_cnt; i++) {
+                val = interpret(fc->arguments[i], state);
+                add_to_env(val, fun.function->parameters[i], state);
+            }
+            Value ret = interpret(fun.function->body, state);
+            state->current_env--;
+            return state->envs[state->current_env + 1].ret_val = ret;
+        }
+        case AST_PRINT: {
+            AstPrint *prnt = (AstPrint *) ast;
+            Value val[prnt->argument_cnt];
+            for (size_t i = 0; i < prnt->argument_cnt; i++) {
+                val[i] = interpret(prnt->arguments[i], state);
+                if (val[i].kind == VK_BOOLEAN) {
+                    printf("boolean: %d\n", val[i].boolean);
+                }
+                else if (val[i].kind == VK_INTEGER) {
+                    printf("integer: %d\n", val[i].integer);
+                }
+                else {
+                    printf("function\n");
+
+                }
+            }
+            return (Value){};}
+        case AST_BLOCK: {
+            AstBlock *block = (AstBlock *) ast; 
+            Value val;
+            for (size_t i = 0;  i < block->expression_cnt; i++) {
+                val = interpret(block->expressions[i], state);
+            }
+            return val;
+        }
         case AST_TOP: {
             AstTop *top = (AstTop *) ast;
             Value value;
@@ -75,8 +152,23 @@ Value interpret(Ast *ast, IState *state) {
             }
             return value;
         }
-        //case AST_LOOP: {return (Value){};}
-        //case AST_CONDITIONAL: {return (Value){};}
+        case AST_LOOP: {
+            AstLoop *loop = (AstLoop *) ast; 
+            Value val;
+            while (interpret(loop->condition, state).boolean) {
+                val = interpret(loop->body, state);
+            }
+            return val;
+        }
+        case AST_CONDITIONAL: {
+            AstConditional *conditional = (AstConditional *) ast; 
+            if (interpret(conditional->condition, state).boolean) {
+                return interpret(conditional->consequent, state);
+            }
+            else {
+                return interpret(conditional->alternative, state);
+            }
+        }
         default: {
             printf("Ast node not implemented\n");
             (Value){};

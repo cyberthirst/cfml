@@ -21,8 +21,8 @@ void *heap_alloc(Value *val, Heap *heap) {
     }
     else {
         void *ptr = heap->heap_free;
-        heap->heap_free += sizeof(val);
-        heap->heap_size += sizeof(val);
+        heap->heap_free += sizeof(*val);
+        heap->heap_size += sizeof(*val);
         return ptr;
     }
 }
@@ -97,6 +97,16 @@ void print_val(Value val) {
     }
 }
 
+void push_env(IState *state) {
+    state->current_env++;
+    state->envs[state->current_env].var_cnt = 0;
+}
+
+void pop_env(IState *state) {
+    state->envs[state->current_env].var_cnt = 0;
+    state->current_env--;
+}
+
 Value interpret(Ast *ast, IState *state) {
     switch(ast->kind) {
         case AST_INTEGER: {
@@ -137,14 +147,14 @@ Value interpret(Ast *ast, IState *state) {
         case AST_FUNCTION_CALL: {
             AstFunctionCall *fc = (AstFunctionCall *) ast; 
             Value fun = interpret(fc->function, state);
-            state->current_env++;
+            push_env(state);
             Value val;
             for (size_t i = 0; i < fc->argument_cnt; i++) {
                 val = interpret(fc->arguments[i], state);
                 add_to_env(val, fun.function->parameters[i], state);
             }
             Value ret = interpret(fun.function->body, state);
-            state->current_env--;
+            pop_env(state);
             return state->envs[state->current_env + 1].ret_val = ret;
         }
         case AST_PRINT: {
@@ -152,15 +162,52 @@ Value interpret(Ast *ast, IState *state) {
             Value val[prnt->argument_cnt];
             for (size_t i = 0; i < prnt->argument_cnt; i++) {
                 val[i] = interpret(prnt->arguments[i], state);
-                print_val(val[i]);
             }
-            return (Value){};}
+            size_t tilda = 0;
+            for (size_t i = 0; i < prnt->format.len; i++) {
+                if (prnt->format.str[i] == '~') {
+                    print_val(val[tilda]);
+                    tilda++;
+                }
+                //TODO move to separete function
+                else {
+                    char c = prnt->format.str[i];
+                    //check for escape characters
+                    if (c == '\\' && prnt->format.len > i + 1) {
+                        char next = prnt->format.str[i + 1];
+                        //increment i so we don't print the next character two times
+                        i++;
+                        if (next == 'n') {
+                            printf("\n");
+                        }
+                        else if (next == 't') {
+                            printf("\t");
+                        }
+                        else if (next == 'r') {
+                            printf("\r");
+                        }
+                        else if (next == '~') {
+                            printf("~");
+                        }
+                        else {
+                            printf("%c", next);
+                        }
+                    }
+                    else {
+                        printf("%c", prnt->format.str[i]);
+                    }
+                }
+            } 
+            return (Value){VK_NULL, NULL};
+        }
         case AST_BLOCK: {
             AstBlock *block = (AstBlock *) ast; 
             Value val;
+            //push_env(state);
             for (size_t i = 0;  i < block->expression_cnt; i++) {
                 val = interpret(block->expressions[i], state);
             }
+            //pop_env(state);
             return val;
         }
         case AST_TOP: {
@@ -174,18 +221,23 @@ Value interpret(Ast *ast, IState *state) {
         case AST_LOOP: {
             AstLoop *loop = (AstLoop *) ast; 
             Value val;
+            push_env(state);
             while (interpret(loop->condition, state).boolean) {
                 val = interpret(loop->body, state);
             }
+            pop_env(state);
             return val;
         }
         case AST_CONDITIONAL: {
             AstConditional *conditional = (AstConditional *) ast; 
-            if (interpret(conditional->condition, state).boolean) {
-                return interpret(conditional->consequent, state);
+            Value cond = interpret(conditional->condition, state);
+            if ((cond.kind == VK_BOOLEAN && !cond.boolean) || (cond.kind == VK_NULL)) {
+                //else branch
+                return interpret(conditional->alternative, state);
             }
             else {
-                return interpret(conditional->alternative, state);
+                //then branch
+                return interpret(conditional->consequent, state);
             }
         }
         default: {

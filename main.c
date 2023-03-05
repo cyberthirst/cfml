@@ -45,9 +45,9 @@ int main(int argc, char **argv) {
 	Arena arena;
 	arena_init(&arena);
 
-    printf("file: %s\n", argv[1]);
+    //printf("file: %s\n", argv[2]);
 
-	Str src = read_file(&arena, argv[1]);
+	Str src = read_file(&arena, argv[2]);
 
 	if (src.str == NULL) {
 		arena_destroy(&arena);
@@ -65,7 +65,10 @@ int main(int argc, char **argv) {
     AstTop *top = (AstTop *) ast;
     IState *state = init_interpreter();
 	Value val = interpret(ast, state);
-	print_val(val);
+	//printf("ret_val: ");
+	//print_val(val);
+
+
 
 	arena_destroy(&arena);
 

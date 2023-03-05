@@ -36,7 +36,7 @@ void add_to_env(Value val, Str name, IState *state) {
     else {
         size_t var_cnt = state->envs[env].var_cnt;
         state->envs[env].vars[var_cnt].name = name;
-        void *ptr = heap_alloc(&val, state->heap);
+        Value *ptr = heap_alloc(&val, state->heap);
         memcpy(ptr, &val, sizeof(val));
         state->envs[env].vars[var_cnt].val = ptr;
         state->envs[env].var_cnt++;
@@ -44,20 +44,22 @@ void add_to_env(Value val, Str name, IState *state) {
 }
 
 bool my_str_cmp(Str a, Str b) {
+    bool len_eq = a.len == b.len;
+    bool memcmp_eq = memcmp(a.str, b.str, a.len) == 0;
 	return a.len == b.len && memcmp(a.str, b.str, a.len) == 0;
 }
 
-ValueKind *find_in_env(Str name, Environment *env) {
+Value *find_in_env(Str name, Environment *env) {
     for (size_t i = 0; i < env->var_cnt; i++) {
-        if (my_str_cmp(env->vars[i].name, name) == 0) {
+        if (my_str_cmp(env->vars[i].name, name) == true) {
             return env->vars[i].val;
         }
     }
     return NULL;
 }
 
-ValueKind *get_var_ptr(Str name, IState *state) {
-    ValueKind *val;
+Value *get_var_ptr(Str name, IState *state) {
+    Value *val;
     val = find_in_env(name, &state->envs[state->current_env]);
     if (val != NULL) {
         return val;
@@ -68,6 +70,31 @@ ValueKind *get_var_ptr(Str name, IState *state) {
 
 void assign_var(ValueKind *val, Value new_val, Heap *heap) {
     memcpy(val, &new_val, sizeof(new_val));
+}
+
+void print_val(Value val) {
+    switch(val.kind) {
+        case VK_INTEGER: {
+            printf("%d", val.integer);
+            break;
+        }
+        case VK_BOOLEAN: {
+            printf("%s", val.boolean ? "true" : "false");
+            break;
+        }
+        case VK_NULL: {
+            printf("null");
+            break;
+        }
+        case VK_GCVALUE: {
+            printf("gcvalue");
+            break;
+        }
+        case VK_FUNCTION: {
+            printf("function");
+            break;
+        }
+    }
 }
 
 Value interpret(Ast *ast, IState *state) {
@@ -91,9 +118,10 @@ Value interpret(Ast *ast, IState *state) {
         }
         case AST_VARIABLE_ACCESS: {
             AstVariableAccess *variable_access = (AstVariableAccess *) ast; 
-            ValueKind *val = get_var_ptr(variable_access->name, state);
-            //TODO convert the ptr to a value
-            return (Value){};
+            Value *val = get_var_ptr(variable_access->name, state);
+            Value value;
+            memcpy(&value, val, sizeof(*val));
+            return value;
         }
         case AST_VARIABLE_ASSIGNMENT: {
             AstVariableAssignment *va = (AstVariableAssignment *) ast;
@@ -124,16 +152,7 @@ Value interpret(Ast *ast, IState *state) {
             Value val[prnt->argument_cnt];
             for (size_t i = 0; i < prnt->argument_cnt; i++) {
                 val[i] = interpret(prnt->arguments[i], state);
-                if (val[i].kind == VK_BOOLEAN) {
-                    printf("boolean: %d\n", val[i].boolean);
-                }
-                else if (val[i].kind == VK_INTEGER) {
-                    printf("integer: %d\n", val[i].integer);
-                }
-                else {
-                    printf("function\n");
-
-                }
+                print_val(val[i]);
             }
             return (Value){};}
         case AST_BLOCK: {

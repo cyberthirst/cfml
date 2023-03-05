@@ -17,11 +17,6 @@ typedef enum {
 } ValueKind;
 
 typedef struct {
-    Str name;
-    ValueKind *val;
-} Variable;
-
-typedef struct {
 	ValueKind kind;
 	union {
 		bool boolean;
@@ -29,6 +24,11 @@ typedef struct {
 		AstFunction *function;
 	};
 } Value;
+
+typedef struct {
+    Str name;
+    Value *val;
+} Variable;
 
 typedef struct {
      Variable vars[MAX_VARS];
@@ -62,7 +62,9 @@ IState* init_interpreter();
 
 void add_to_env(Value val, Str name, IState *state);
 
-ValueKind *find_in_env(Str name, Environment *env);
+Value *find_in_env(Str name, Environment *env);
+
+void print_val(Value val);
 
 //interprets the ast `ast` using the state `state
 Value interpret(Ast *ast, IState *state);

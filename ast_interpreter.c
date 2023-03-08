@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <assert.h>
 
 #include "ast_interpreter.h"
 #include "parser.h"
@@ -54,16 +55,109 @@ ValueKind *function_alloc(IState *state) {
     return heap_alloc(sizeof(Function), state->heap);
 }
 
+Value construct_function(AstFunction *ast_func, IState *state) {
+    Function *func = function_alloc(state);
+    func->kind = VK_FUNCTION;
+    func->val = ast_func;
+    return func;
+}
+
 ValueKind *integer_alloc(IState *state) {
     return heap_alloc(sizeof(Integer), state->heap);
+}
+
+Value construct_integer(i32 val, IState *state) {
+    Integer *integer = integer_alloc(state);
+    integer->kind = VK_INTEGER;
+    integer->val = val;
+    return integer;
 }
 
 ValueKind *boolean_alloc(IState *state) {
     return heap_alloc(sizeof(Boolean), state->heap);
 }
 
+Value construct_boolean(bool val, IState *state) {
+    Boolean *boolean = boolean_alloc(state);
+    boolean->kind = VK_BOOLEAN;
+    boolean->val = val;
+    return boolean;
+}
+
 ValueKind *null_alloc(IState *state) {
     return heap_alloc(sizeof(Null), state->heap);
+}
+
+
+//TODO don't construct null, just set the Value ptr to NULL
+Value construct_null(IState *state) {
+    Null *null = null_alloc(state);
+    null->kind = VK_NULL;
+    return null;
+}
+
+Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
+    /*
+        FROM REFERENCE IMPLEMENTATION
+    */
+    const u8 *method_name = m_name.str;
+	size_t method_name_len = m_name.len;
+	#define METHOD(name) \
+			if (sizeof(name) - 1 == method_name_len && memcmp(name, method_name, method_name_len) == 0) /* body*/
+    ValueKind kind = *(ValueKind *)obj;
+    if (kind == VK_INTEGER || kind == VK_BOOLEAN) { 
+        assert(argc == 1);
+        METHOD("+") {
+            return construct_integer(((Integer *)obj)->val + ((Integer *)argv[0])->val, state);
+        }
+        METHOD("-") {
+            return construct_integer(((Integer *)obj)->val - ((Integer *)argv[0])->val, state);
+        }
+        METHOD("*") { 
+            return construct_integer(((Integer *)obj)->val * ((Integer *)argv[0])->val, state);
+        }
+        METHOD("/") {
+            return construct_integer(((Integer *)obj)->val / ((Integer *)argv[0])->val, state);
+        }
+        METHOD("%") {
+            return construct_integer(((Integer *)obj)->val % ((Integer *)argv[0])->val, state);
+        }
+        METHOD("<=") {
+            return construct_boolean(((Integer *)obj)->val <= ((Integer *)argv[0])->val, state);
+        }
+        METHOD(">=") {
+            return construct_boolean(((Integer *)obj)->val >= ((Integer *)argv[0])->val, state);
+        }
+        METHOD(">") {
+            return construct_boolean(((Integer *)obj)->val > ((Integer *)argv[0])->val, state);
+        }
+        METHOD("<") {
+            return construct_boolean(((Integer *)obj)->val < ((Integer *)argv[0])->val, state);
+        }
+        METHOD("==") { 
+            if (kind == VK_INTEGER)
+                return construct_boolean(((Integer *)obj)->val == ((Integer *)argv[0])->val, state);
+            else
+                return construct_boolean(((Boolean *)obj)->val == ((Boolean *)argv[0])->val, state);
+        }
+        METHOD("!=") { 
+            if (kind == VK_INTEGER)
+                return construct_boolean(((Integer *)obj)->val != ((Integer *)argv[0])->val, state);
+            else
+                return construct_boolean(((Boolean *)obj)->val != ((Boolean *)argv[0])->val, state);
+        }
+    }
+    if (kind == VK_BOOLEAN) {
+        assert(argc == 1);
+        METHOD("&") {
+            return construct_boolean(((Boolean *)obj)->val == ((Boolean *)argv[0])->val, state);
+        }
+        METHOD("|") {
+            return construct_boolean(((Boolean *)obj)->val != ((Boolean *)argv[0])->val, state);
+        }
+    }
+
+    return (Value){NULL};
 }
 
 void add_to_scope(Value val, Str name, IState *state) {
@@ -190,29 +284,14 @@ Value interpret(Ast *ast, IState *state) {
     switch(ast->kind) {
         case AST_INTEGER: {
             AstInteger *integer = (AstInteger *) ast;
-            Value val = integer_alloc(state);
-
-            ((Integer *)val)->kind = VK_INTEGER;
-            ((Integer *)val)->val = integer->value;
-
-            return val;
+            return construct_integer(integer->value, state);
         }
         case AST_BOOLEAN: {
             AstBoolean *boolean = (AstBoolean *) ast; 
-            Value val = boolean_alloc(state);
-
-            ((Boolean *)val)->kind = VK_BOOLEAN;
-            ((Boolean *)val)->val = boolean->value;
-
-            return val;
+            return construct_boolean(boolean->value, state);
         }
         case AST_NULL: {
-            AstNull *null = (AstNull *) ast;
-            Value val = null_alloc(state);
-
-            ((Null *)val)->kind = VK_NULL;
-
-            return val;
+            return construct_null(state);
         }
         case AST_DEFINITION: {
             AstDefinition *definition = (AstDefinition *) ast; 
@@ -234,13 +313,7 @@ Value interpret(Ast *ast, IState *state) {
         }
         case AST_FUNCTION: {
             AstFunction *function = (AstFunction *) ast;
-
-            Value val = function_alloc(state);
-
-            ((Function *)val)->kind = VK_FUNCTION;
-            ((Function *)val)->val = function;
-
-	        return val;
+            return construct_function(function, state);
         }
         case AST_FUNCTION_CALL: {
             AstFunctionCall *fc = (AstFunctionCall *) ast; 
@@ -411,21 +484,32 @@ Value interpret(Ast *ast, IState *state) {
             }
             //TODO add error handling
             return (Value){};
-        }
+        }*/
 
         case AST_METHOD_CALL: {
             AstMethodCall *mc = (AstMethodCall *) ast;
             Value obj = interpret(mc->object, state);
+            ValueKind vk = *(ValueKind *)obj;
+            Value *args = malloc(sizeof(Value) * mc->argument_cnt);
             Value val;
-            for (size_t i = 0; i < obj.object->field_cnt; i++) {
-                if (my_str_cmp(obj.object->fields[i].name, mc->name) == true) {
-                    val = interpret(obj.object->fields[i].value.function, state);
-                    return val;
+            if (vk == VK_INTEGER || vk == VK_BOOLEAN) {
+                for (size_t i = 0; i < mc->argument_cnt; i++) {
+                    args[i] = interpret(mc->arguments[i], state);
                 }
+                val = builtins(obj, mc->argument_cnt, args, mc->name, state);
             }
+            /*else {
+                Value val;
+                for (size_t i = 0; i < obj.object->field_cnt; i++) {
+                    if (my_str_cmp(obj.object->fields[i].name, mc->name) == true) {
+                        val = interpret(obj.object->fields[i].value.function, state);
+                        return val;
+                }
+            }*/
             //TODO add error handling
+            free(args);
             return val;
-        }*/
+        }
 
         default: {
             printf("Ast node not implemented\n");

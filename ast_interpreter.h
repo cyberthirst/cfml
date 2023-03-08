@@ -21,7 +21,7 @@ typedef enum {
 typedef struct Array Array;
 typedef struct Object Object;
 
-typedef struct {
+/*typedef struct {
 	ValueKind kind;
 	union {
 		bool boolean;
@@ -30,17 +30,38 @@ typedef struct {
         Array *array;
         Object *object;
 	};
-} Value;
+} Value;*/
+
+typedef void * Value;
+
+typedef struct {
+    ValueKind kind;
+    bool val;
+} Boolean;
+
+typedef struct {
+    ValueKind kind;
+    i32 val;
+} Integer;
+
+typedef struct {
+    ValueKind kind;
+    AstFunction *val;
+} Function;
+
+typedef struct {
+    ValueKind kind;
+} Null;
 
 struct Array {
     ValueKind kind;
     size_t size;
-    Value values[];
+    Value val[];
 };
 
 typedef struct {
 	Str name;
-	Value value;
+	Value val;
 } Field;
 
 struct Object {
@@ -52,7 +73,7 @@ struct Object {
 
 typedef struct {
     Str name;
-    Value *val;
+    Value val;
 } Variable;
 
 typedef struct {

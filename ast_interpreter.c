@@ -21,32 +21,50 @@ void *heap_alloc(size_t sz, Heap *heap) {
     }
     else {
         void *ptr = heap->heap_free;
+
         heap->heap_free += sz;
         heap->heap_size += sz;
+
+        //align to 8 bytes
+        size_t diff = 8 - (heap->heap_size % 8);
+        if (diff != 8) {
+            heap->heap_free += diff;
+            heap->heap_size += diff;
+        }
+
         return ptr;
     }
 }
 
-Value array_alloc(int size, IState *state) {
-    Value val;
-    val.kind = VK_ARRAY;
+ValueKind *array_alloc(int size, IState *state) {
     //array is stored as folows:
     // ValueKind | size_t | Value[size]
     // ValueKind == VK_ARRAY | size_t == numOfElems(array) | Value[size] == array of values (aka pointers to the actual valuesa)
-    val.array = heap_alloc(sizeof(Array) + sizeof(Value) * size, state->heap);
-    return val;
+    return heap_alloc(sizeof(Array) + sizeof(Value) * size, state->heap);
 }
 
-Value object_alloc(int size, IState *state) {
-    Value val;
-    val.kind = VK_OBJECT;
+ValueKind *object_alloc(int size, IState *state) {
     //object is stored as follows:
     // ValueKind | parent | size_t | Value[size]
     // ValueKind == VK_OBJECT | parent == VK_OBJECT | size_t == numOfFields(object) | Value[size] == array of Values (aka pointers members of the object)
-    val.object = heap_alloc(sizeof(Object) + sizeof(Value) * size, state->heap);
-    return val;
+    return heap_alloc(sizeof(Object) + sizeof(Field) * size, state->heap);
 }
 
+ValueKind *function_alloc(IState *state) {
+    return heap_alloc(sizeof(Function), state->heap);
+}
+
+ValueKind *integer_alloc(IState *state) {
+    return heap_alloc(sizeof(Integer), state->heap);
+}
+
+ValueKind *boolean_alloc(IState *state) {
+    return heap_alloc(sizeof(Boolean), state->heap);
+}
+
+ValueKind *null_alloc(IState *state) {
+    return heap_alloc(sizeof(Null), state->heap);
+}
 
 void add_to_scope(Value val, Str name, IState *state) {
     size_t env = state->current_env;
@@ -58,9 +76,7 @@ void add_to_scope(Value val, Str name, IState *state) {
     else {
         size_t var_cnt = state->envs[env].scopes[scope_cnt].var_cnt;
         state->envs[env].scopes[scope_cnt].vars[var_cnt].name = name;
-        Value *ptr = heap_alloc(sizeof(val), state->heap);
-        memcpy(ptr, &val, sizeof(val));
-        state->envs[env].scopes[scope_cnt].vars[var_cnt].val = ptr;
+        state->envs[env].scopes[scope_cnt].vars[var_cnt].val = val;
         state->envs[env].scopes[scope_cnt].var_cnt++;
     }
 }
@@ -81,7 +97,7 @@ Value *find_in_env(Str name, Environment *env) {
         if (j > 0) j--;
         for (;j >= 0; j--) {
             if (my_str_cmp(env->scopes[i].vars[j].name, name) == true) {
-                    return env->scopes[i].vars[j].val;
+                    return &env->scopes[i].vars[j].val;
             }
         }
     }
@@ -91,19 +107,30 @@ Value *find_in_env(Str name, Environment *env) {
 
 Value *get_var_ptr(Str name, IState *state) {
     Value *val;
+    //try to find the symbol in the current environment
+    //each function call creates a new environment
     val = find_in_env(name, &state->envs[state->current_env]);
     if (val != NULL) {
         return val;
     }
+    //if the current environment doesnt have the symbol try to find it in the global environment
     val = find_in_env(name, &state->envs[GLOBAL_ENV_INDEX]);
     return val;
 }
 
-void assign_var(ValueKind *val, Value new_val, Heap *heap) {
-    ValueKind kind = *val;
+bool is_primitive(ValueKind kind){
+    return kind == VK_BOOLEAN || kind == VK_INTEGER || kind == VK_FUNCTION || kind == VK_NULL;
+}
+
+
+//Value *val is pointer to Value (which is a pointer to the heap)
+void assign_var(Value *val, Value new_val, Heap *heap) {
+    ValueKind kind = *((ValueKind *)*val);
     //primitive types are immutable
-    if (kind == VK_BOOLEAN || kind == VK_INTEGER || kind == VK_FUNCTION) {
-        memcpy(val, &new_val, sizeof(new_val));
+    //to assign a value to a variable of a primitive type we need to allocate a new value on the heap
+    //and assign the original pointer to the pointer to the new value on the heap
+    if (is_primitive(kind)) {
+        *val = new_val;
     }
     //mutable types are modified using refs
     else {
@@ -113,13 +140,13 @@ void assign_var(ValueKind *val, Value new_val, Heap *heap) {
 }
 
 void print_val(Value val) {
-    switch(val.kind) {
+    switch(*(ValueKind *)val) {
         case VK_INTEGER: {
-            printf("%d", val.integer);
+            printf("%d", ((Integer *)val)->val);
             break;
         }
         case VK_BOOLEAN: {
-            printf("%s", val.boolean ? "true" : "false");
+            printf("%s", ((Boolean *)val)->val ? "true" : "false");
             break;
         }
         case VK_NULL: {
@@ -163,14 +190,29 @@ Value interpret(Ast *ast, IState *state) {
     switch(ast->kind) {
         case AST_INTEGER: {
             AstInteger *integer = (AstInteger *) ast;
-            return (Value) { .kind = VK_INTEGER, .integer = integer->value};
+            Value val = integer_alloc(state);
+
+            ((Integer *)val)->kind = VK_INTEGER;
+            ((Integer *)val)->val = integer->value;
+
+            return val;
         }
         case AST_BOOLEAN: {
             AstBoolean *boolean = (AstBoolean *) ast; 
-            return (Value) { .kind = VK_BOOLEAN, .boolean = boolean->value};
+            Value val = boolean_alloc(state);
+
+            ((Boolean *)val)->kind = VK_BOOLEAN;
+            ((Boolean *)val)->val = boolean->value;
+
+            return val;
         }
         case AST_NULL: {
-            return (Value) { .kind = VK_NULL };
+            AstNull *null = (AstNull *) ast;
+            Value val = null_alloc(state);
+
+            ((Null *)val)->kind = VK_NULL;
+
+            return val;
         }
         case AST_DEFINITION: {
             AstDefinition *definition = (AstDefinition *) ast; 
@@ -181,20 +223,24 @@ Value interpret(Ast *ast, IState *state) {
         case AST_VARIABLE_ACCESS: {
             AstVariableAccess *variable_access = (AstVariableAccess *) ast; 
             Value *val = get_var_ptr(variable_access->name, state);
-            Value value;
-            memcpy(&value, val, sizeof(*val));
-            return value;
+            return *val;
         }
         case AST_VARIABLE_ASSIGNMENT: {
             AstVariableAssignment *va = (AstVariableAssignment *) ast;
-            Value val = interpret(va->value, state);
-            ValueKind *val_ptr = get_var_ptr(va->name, state);
-            assign_var(val_ptr, val, state->heap);
-            return val;
+            Value new_val = interpret(va->value, state);
+            Value *var_ptr = get_var_ptr(va->name, state);
+            assign_var(var_ptr, new_val, state->heap);
+            return var_ptr;
         }
         case AST_FUNCTION: {
             AstFunction *function = (AstFunction *) ast;
-	        return (Value) { .kind = VK_FUNCTION, .function = function };
+
+            Value val = function_alloc(state);
+
+            ((Function *)val)->kind = VK_FUNCTION;
+            ((Function *)val)->val = function;
+
+	        return val;
         }
         case AST_FUNCTION_CALL: {
             AstFunctionCall *fc = (AstFunctionCall *) ast; 
@@ -203,9 +249,9 @@ Value interpret(Ast *ast, IState *state) {
             Value val;
             for (size_t i = 0; i < fc->argument_cnt; i++) {
                 val = interpret(fc->arguments[i], state);
-                add_to_scope(val, fun.function->parameters[i], state);
+                add_to_scope(val, ((Function *)fun)->val->parameters[i], state);
             }
-            Value ret = interpret(fun.function->body, state);
+            Value ret = interpret(((Function *)fun)->val->body, state);
             pop_env(state);
             return state->envs[state->current_env + 1].ret_val = ret;
         }
@@ -274,7 +320,7 @@ Value interpret(Ast *ast, IState *state) {
             AstLoop *loop = (AstLoop *) ast; 
             Value val;
             push_scope(state);
-            while (interpret(loop->condition, state).boolean) {
+            while (((Boolean  *)interpret(loop->condition, state))->val) {
                 val = interpret(loop->body, state);
             }
             pop_scope(state);
@@ -283,7 +329,7 @@ Value interpret(Ast *ast, IState *state) {
         case AST_CONDITIONAL: {
             AstConditional *conditional = (AstConditional *) ast; 
             Value cond = interpret(conditional->condition, state);
-            if ((cond.kind == VK_BOOLEAN && !cond.boolean) || (cond.kind == VK_NULL)) {
+            if ((*(ValueKind *)cond == VK_BOOLEAN && !((Boolean *)cond)->val) || *(ValueKind *)cond == VK_NULL) {
                 //else branch
                 return interpret(conditional->alternative, state);
             }
@@ -292,7 +338,7 @@ Value interpret(Ast *ast, IState *state) {
                 return interpret(conditional->consequent, state);
             }
         }
-        case AST_ARRAY: {
+        /*case AST_ARRAY: {
             AstArray *array = (AstArray *) ast;
             Value sz = interpret(array->size, state);
             //alloc space for the array and gete the value (pointer) to the array
@@ -379,11 +425,11 @@ Value interpret(Ast *ast, IState *state) {
             }
             //TODO add error handling
             return val;
-        }
+        }*/
 
         default: {
             printf("Ast node not implemented\n");
-            (Value){};
+            return NULL;
         }
     }
 }

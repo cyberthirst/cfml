@@ -4,6 +4,7 @@
 
 #define MAX_ENVS 1024
 #define MAX_VARS 64
+#define MAX_SCOPES 64
 #define MAX_VAR_NAME_LEN 64
 #define MEM_SZ 1024 * 1024 * 4
 #define GLOBAL_ENV_INDEX 0
@@ -12,9 +13,13 @@ typedef enum {
 	VK_NULL,
 	VK_BOOLEAN,
 	VK_INTEGER,
-	VK_GCVALUE,
+	VK_ARRAY,
 	VK_FUNCTION,
+    VK_OBJECT,
 } ValueKind;
+
+typedef struct Array Array;
+typedef struct Object Object;
 
 typedef struct {
 	ValueKind kind;
@@ -22,8 +27,28 @@ typedef struct {
 		bool boolean;
 		i32 integer;
 		AstFunction *function;
+        Array *array;
+        Object *object;
 	};
 } Value;
+
+struct Array {
+    ValueKind kind;
+    size_t size;
+    Value values[];
+};
+
+typedef struct {
+	Str name;
+	Value value;
+} Field;
+
+struct Object {
+    ValueKind kind;
+    Value parent;
+    size_t field_cnt;
+    Field fields[];
+};
 
 typedef struct {
     Str name;
@@ -31,8 +56,17 @@ typedef struct {
 } Variable;
 
 typedef struct {
-     Variable vars[MAX_VARS];
-     size_t var_cnt;
+    //stack of variables
+    Variable vars[MAX_VARS];
+    size_t var_cnt;
+} Scope;
+
+//represents environment of a function
+//also used for global environment
+typedef struct {
+    //stack of scopes
+     Scope scopes[MAX_SCOPES];
+     size_t scope_cnt;
      Value ret_val;
 } Environment;
 
@@ -60,7 +94,7 @@ typedef struct {
 //initializes the state of the interpreter
 IState* init_interpreter();
 
-void add_to_env(Value val, Str name, IState *state);
+void add_to_scope(Value val, Str name, IState *state);
 
 Value *find_in_env(Str name, Environment *env);
 

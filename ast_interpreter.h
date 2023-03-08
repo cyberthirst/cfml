@@ -68,7 +68,7 @@ struct Object {
     ValueKind kind;
     Value parent;
     size_t field_cnt;
-    Field fields[];
+    Field val[];
 };
 
 typedef struct {

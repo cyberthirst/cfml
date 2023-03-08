@@ -44,6 +44,13 @@ ValueKind *array_alloc(int size, IState *state) {
     return heap_alloc(sizeof(Array) + sizeof(Value) * size, state->heap);
 }
 
+Value construct_array(int size, IState *state) {
+    Array *array = array_alloc(size, state);
+    array->kind = VK_ARRAY;
+    array->size = size;
+    return array;
+}
+
 ValueKind *object_alloc(int size, IState *state) {
     //object is stored as follows:
     // ValueKind | parent | size_t | Value[size]
@@ -96,6 +103,28 @@ Value construct_null(IState *state) {
     return null;
 }
 
+
+void add_to_scope(Value val, Str name, IState *state) {
+    size_t env = state->current_env;
+    size_t scope_cnt = state->envs[env].scope_cnt;
+    if (state->envs[env].scopes[scope_cnt].var_cnt == MAX_VARS) {
+        printf("Too many variables in local scope\n");
+        exit(1);
+    }
+    else {
+        size_t var_cnt = state->envs[env].scopes[scope_cnt].var_cnt;
+        state->envs[env].scopes[scope_cnt].vars[var_cnt].name = name;
+        state->envs[env].scopes[scope_cnt].vars[var_cnt].val = val;
+        state->envs[env].scopes[scope_cnt].var_cnt++;
+    }
+}
+
+bool my_str_cmp(Str a, Str b) {
+    bool len_eq = a.len == b.len;
+    bool memcmp_eq = memcmp(a.str, b.str, a.len) == 0;
+	return a.len == b.len && memcmp(a.str, b.str, a.len) == 0;
+}
+
 Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
     /*
         FROM REFERENCE IMPLEMENTATION
@@ -105,7 +134,7 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
 	#define METHOD(name) \
 			if (sizeof(name) - 1 == method_name_len && memcmp(name, method_name, method_name_len) == 0) /* body*/
     ValueKind kind = *(ValueKind *)obj;
-    if (kind == VK_INTEGER || kind == VK_BOOLEAN) { 
+    if (kind == VK_INTEGER || kind == VK_BOOLEAN || kind == VK_NULL) { 
         assert(argc == 1);
         METHOD("+") {
             return construct_integer(((Integer *)obj)->val + ((Integer *)argv[0])->val, state);
@@ -137,12 +166,16 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
         METHOD("==") { 
             if (kind == VK_INTEGER)
                 return construct_boolean(((Integer *)obj)->val == ((Integer *)argv[0])->val, state);
+            else if (kind == VK_NULL)
+                return construct_boolean(*(ValueKind *)argv[0] == VK_NULL, state);
             else
                 return construct_boolean(((Boolean *)obj)->val == ((Boolean *)argv[0])->val, state);
         }
         METHOD("!=") { 
             if (kind == VK_INTEGER)
                 return construct_boolean(((Integer *)obj)->val != ((Integer *)argv[0])->val, state);
+            else if (kind == VK_NULL)
+                return construct_boolean(*(ValueKind *)argv[0] != VK_NULL, state);
             else
                 return construct_boolean(((Boolean *)obj)->val != ((Boolean *)argv[0])->val, state);
         }
@@ -157,28 +190,44 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
         }
     }
 
+    METHOD("set") {
+        if (kind == VK_ARRAY) {
+            Array *array = (Array *)obj;
+            array->val[((Integer *)argv[0])->val] = argv[1];
+            return obj;
+        }
+        else {
+            Object *object = (Object *)obj;
+            for (int i = 0; i < object->field_cnt; i++) {
+                if (my_str_cmp(object->val[i].name, m_name)) {
+                    object->val[i].val = argv[1];
+                    return obj;
+                }
+            }
+            builtins(object->parent, argc, argv, m_name, state);
+        }
+
+    }
+
+    METHOD("get") { 
+        if (kind == VK_ARRAY) {
+            Array *array = (Array *)obj;
+            return array->val[((Integer *)argv[0])->val];
+        }
+        else {
+            Object *object = (Object *)obj;
+            for (int i = 0; i < object->field_cnt; i++) {
+                if (my_str_cmp(object->val[i].name, m_name)) {
+                    return object->val[i].val;
+                }
+            }
+            builtins(object->parent, argc, argv, m_name, state);
+        }
+
+    }
+
+
     return (Value){NULL};
-}
-
-void add_to_scope(Value val, Str name, IState *state) {
-    size_t env = state->current_env;
-    size_t scope_cnt = state->envs[env].scope_cnt;
-    if (state->envs[env].scopes[scope_cnt].var_cnt == MAX_VARS) {
-        printf("Too many variables in local scope\n");
-        exit(1);
-    }
-    else {
-        size_t var_cnt = state->envs[env].scopes[scope_cnt].var_cnt;
-        state->envs[env].scopes[scope_cnt].vars[var_cnt].name = name;
-        state->envs[env].scopes[scope_cnt].vars[var_cnt].val = val;
-        state->envs[env].scopes[scope_cnt].var_cnt++;
-    }
-}
-
-bool my_str_cmp(Str a, Str b) {
-    bool len_eq = a.len == b.len;
-    bool memcmp_eq = memcmp(a.str, b.str, a.len) == 0;
-	return a.len == b.len && memcmp(a.str, b.str, a.len) == 0;
 }
 
 Value *find_in_env(Str name, Environment *env) {
@@ -249,6 +298,17 @@ void print_val(Value val) {
         }
         case VK_FUNCTION: {
             printf("function");
+            break;
+        }
+        case VK_ARRAY: {
+            printf("[");
+            for (int i = 0; i < ((Array *)val)->size; i++) {
+                print_val(((Array *)val)->val[i]);
+                if (i != ((Array *)val)->size - 1) {
+                    printf(", ");
+                }
+            }
+            printf("]");
             break;
         }
     }
@@ -411,18 +471,16 @@ Value interpret(Ast *ast, IState *state) {
                 return interpret(conditional->consequent, state);
             }
         }
-        /*case AST_ARRAY: {
+        case AST_ARRAY: {
             AstArray *array = (AstArray *) ast;
-            Value sz = interpret(array->size, state);
+            Integer *sz = interpret(array->size, state);
             //alloc space for the array and gete the value (pointer) to the array
-            Value arr = array_alloc(sz.integer, state);
-            arr.array->kind = VK_ARRAY;
-            arr.array->size = sz.integer;
+            Array *arr = construct_array(sz->val, state);
             //eval the initializer `sz` times and assign it to the array
-            for (size_t i = 0; i < sz.integer; i++) {
+            for (size_t i = 0; i < sz->val; i++) {
                 //need to eval the initializer in tmp scope
                 push_scope(state);
-                arr.array->values[i] = interpret(array->initializer, state);
+                arr->val[i] = interpret(array->initializer, state);
                 pop_scope(state);
             }
             return arr;
@@ -430,20 +488,22 @@ Value interpret(Ast *ast, IState *state) {
         //TODO generalize to objects
         case AST_INDEX_ACCESS: {
             AstIndexAccess *aa = (AstIndexAccess *) ast;
-            Value arr = interpret(aa->object, state);
-            Value idx = interpret(aa->index, state);
-            return arr.array->values[idx.integer];
+            Array *arr = interpret(aa->object, state);
+            Integer *idx = interpret(aa->index, state);
+            return builtins(arr, 1, &idx, (Str){"get", 3}, state);
         }
         //TODO generalize to objects
         case AST_INDEX_ASSIGNMENT: {
             AstIndexAssignment *ia = (AstIndexAssignment *) ast;
-            Value arr = interpret(ia->object, state);
-            Value idx = interpret(ia->index, state);
+            Value obj = interpret(ia->object, state);
+            Integer *idx = interpret(ia->index, state);
             Value val = interpret(ia->value, state);
-            arr.array->values[idx.integer] = val;
+            Value *args = malloc(sizeof(Value) * 2);
+            args[0] = idx; args[1] = val;
+            builtins(obj, 1, args, (Str){"set", 3}, state);
             return val;
         }
-
+        /*
         case AST_OBJECT: {
             AstObject *object = (AstObject *) ast;
             Value sz = interpret(object->member_cnt, state);
@@ -492,7 +552,8 @@ Value interpret(Ast *ast, IState *state) {
             ValueKind vk = *(ValueKind *)obj;
             Value *args = malloc(sizeof(Value) * mc->argument_cnt);
             Value val;
-            if (vk == VK_INTEGER || vk == VK_BOOLEAN) {
+            //TODO add cmpt if name is SET or GET
+            if (vk == VK_INTEGER || vk == VK_BOOLEAN || vk == VK_NULL) {
                 for (size_t i = 0; i < mc->argument_cnt; i++) {
                     args[i] = interpret(mc->arguments[i], state);
                 }

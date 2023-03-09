@@ -6,7 +6,7 @@
 #define MAX_VARS 256
 #define MAX_SCOPES 256
 #define MAX_VAR_NAME_LEN 64
-#define MEM_SZ 1024 * 1024 * 4
+#define MEM_SZ 1024 * 1024 * 64
 #define GLOBAL_ENV_INDEX 0
 
 typedef enum {

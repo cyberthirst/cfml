@@ -210,16 +210,6 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
             array->val[((Integer *)argv[0])->val] = argv[1];
             return obj;
         }
-        /*else {
-            Object *object = (Object *)obj;
-            for (int i = 0; i < object->field_cnt; i++) {
-                if (my_str_cmp(object->val[i].name, m_name)) {
-                    object->val[i].val = argv[1];
-                    return obj;
-                }
-            }
-            builtins(object->parent, argc, argv, m_name, state);
-        }*/
     }
 
     METHOD("get") { 
@@ -230,16 +220,6 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
             assert(index < array->size);
             return array->val[((Integer *)argv[0])->val];
         }
-        /*else {
-            Object *object = (Object *)obj;
-            for (int i = 0; i < object->field_cnt; i++) {
-                if (my_str_cmp(object->val[i].name, m_name)) {
-                    return object->val[i].val;
-                }
-            }
-            builtins(object->parent, argc, argv, m_name, state);
-        }*/
-
     }
 
     return (Value){NULL};
@@ -340,6 +320,10 @@ void print_val(Value val) {
 }
 
 void push_env(IState *state) {
+    if (state->current_env == MAX_ENVS - 1) {
+        printf("max envs reached");
+        exit(1);
+    }
     state->current_env++;
     state->envs[state->current_env].scope_cnt = 0;
     state->envs[state->current_env].scopes[0].var_cnt = 0;
@@ -352,6 +336,10 @@ void pop_env(IState *state) {
 }
 
 void push_scope(IState *state) {
+    if (state->envs[state->current_env].scope_cnt == MAX_SCOPES - 1) {
+        printf("max scopes reached");
+        exit(1);
+    }
     size_t env = state->current_env;
     size_t scope_cnt = state->envs[env].scope_cnt;
     state->envs[env].scope_cnt++;
@@ -427,14 +415,21 @@ Value interpret(Ast *ast, IState *state) {
         case AST_VARIABLE_ACCESS: {
             AstVariableAccess *variable_access = (AstVariableAccess *) ast; 
             Value *val = get_var_ptr(variable_access->name, state);
-            if (val == NULL)
+            if (val == NULL){
+                Value nl = construct_null(state);
+                add_to_scope(nl, variable_access->name, state);
                 return construct_null(state);
+            }
             return *val;
         }
         case AST_VARIABLE_ASSIGNMENT: {
             AstVariableAssignment *va = (AstVariableAssignment *) ast;
             Value new_val = interpret(va->value, state);
             Value *var_ptr = get_var_ptr(va->name, state);
+            if (var_ptr == NULL) {
+                add_to_scope(new_val, va->name, state);
+                return new_val;
+            } 
             *var_ptr = new_val;
             return *var_ptr;
         }
@@ -522,13 +517,17 @@ Value interpret(Ast *ast, IState *state) {
         }
         case AST_LOOP: {
             AstLoop *loop = (AstLoop *) ast; 
+            Value cond = interpret(loop->condition, state);
             Value val;
-            while (((Boolean  *)interpret(loop->condition, state))->val) {
+            while (true) {
+                if ((*(ValueKind *)cond == VK_BOOLEAN && !((Boolean *)cond)->val) || *(ValueKind *)cond == VK_NULL) {
+                    return construct_null(state);
+                }
                 push_scope(state);
                 val = interpret(loop->body, state);
                 pop_scope(state);
+                cond = interpret(loop->condition, state);
             }
-            return val;
         }
         case AST_CONDITIONAL: {
             AstConditional *conditional = (AstConditional *) ast; 
@@ -595,7 +594,9 @@ Value interpret(Ast *ast, IState *state) {
                 //TODO add check if ast object definition
                 AstDefinition *member = object->members[i];
                 obj->val[i].name = member->name;
+                push_scope(state);
                 obj->val[i].val = interpret(member->value, state);
+                pop_scope(state);
             }
             return obj;
         }
@@ -620,6 +621,9 @@ Value interpret(Ast *ast, IState *state) {
 
         case AST_METHOD_CALL: {
             AstMethodCall *mc = (AstMethodCall *) ast;
+            if (my_str_cmp(mc->name, (Str) {"inner_solve", 11})) {
+                int tmp = 666;
+            }
             Object *obj = interpret(mc->object, state);
             ValueKind vk = *(ValueKind *)obj;
             Value *args = malloc(sizeof(Value) * mc->argument_cnt);
@@ -627,7 +631,6 @@ Value interpret(Ast *ast, IState *state) {
             for (size_t i = 0; i < mc->argument_cnt; i++) {
                 args[i] = interpret(mc->arguments[i], state);
             }
-            //TODO add cmpt if name is SET or GET
             if (vk == VK_INTEGER || vk == VK_BOOLEAN || vk == VK_NULL) {
                 val = builtins(obj, mc->argument_cnt, args, mc->name, state);
             }

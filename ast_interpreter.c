@@ -58,6 +58,14 @@ ValueKind *object_alloc(int size, IState *state) {
     return heap_alloc(sizeof(Object) + sizeof(Field) * size, state->heap);
 }
 
+Value construct_object(int size, Value parent, IState *state) {
+    Object *object = object_alloc(size, state);
+    object->kind = VK_OBJECT;
+    object->field_cnt = size;
+    object->parent = parent;
+    return object;
+}
+
 ValueKind *function_alloc(IState *state) {
     return heap_alloc(sizeof(Function), state->heap);
 }
@@ -231,6 +239,7 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
 }
 
 Value *find_in_env(Str name, Environment *env) {
+    //we don't want to subtract 1 like in the case of vars because by default there is the global scope on index 0
     //search from all scopes starting on top
     for (int i = env->scope_cnt; i >= 0; i--) {
         //search all vars in the scope starting from the latest added
@@ -340,6 +349,38 @@ void pop_scope(IState *state) {
 }
 
 
+Value *field_access(Value obj, Str name, IState *state) {
+    Object *object = (Object *)obj;
+    for (int i = 0; i < object->field_cnt; i++) {
+        if (my_str_cmp(object->val[i].name, name)) {
+            return &object->val[i].val;
+        }
+    }
+    return field_access(object->parent, name, state);
+}
+
+Value method_call(Value obj, Str name, int argc, Value *argv, IState *state) {
+    Object *object = (Object *)obj;
+    for (int i = 0; i < object->field_cnt; i++) {
+        if (my_str_cmp(object->val[i].name, name)) {
+            Value ret;
+            push_env(state);
+            add_to_scope(obj, (Str){"this", 4}, state);
+            Field field = object->val[i];
+            Function *func = (AstFunction *)field.val;
+            for (int j = 0; j < argc; j++) {
+                add_to_scope(argv[j], func->val->parameters[j], state);
+                
+            }
+            ret = interpret(func->val->body, state);
+            pop_env(state);
+            return state->envs[state->current_env + 1].ret_val = ret;
+        }
+    }
+    return method_call(object->parent, name, argv, argc, state);
+}
+
+
 Value interpret(Ast *ast, IState *state) {
     switch(ast->kind) {
         case AST_INTEGER: {
@@ -377,15 +418,18 @@ Value interpret(Ast *ast, IState *state) {
         }
         case AST_FUNCTION_CALL: {
             AstFunctionCall *fc = (AstFunctionCall *) ast; 
-            Value fun = interpret(fc->function, state);
-            push_env(state);
-            Value val;
+            Function *fun = interpret(fc->function, state);
+            Value *args = (Value *)malloc(sizeof(Value) * fc->argument_cnt);
             for (size_t i = 0; i < fc->argument_cnt; i++) {
-                val = interpret(fc->arguments[i], state);
-                add_to_scope(val, ((Function *)fun)->val->parameters[i], state);
+                args[i] = interpret(fc->arguments[i], state);
+            }
+            push_env(state);
+            for (size_t i = 0; i < fc->argument_cnt; i++) {
+                add_to_scope(args[i], ((AstFunction *)fun->val)->parameters[i], state);
             }
             Value ret = interpret(((Function *)fun)->val->body, state);
             pop_env(state);
+            free(args);
             return state->envs[state->current_env + 1].ret_val = ret;
         }
         case AST_PRINT: {
@@ -429,7 +473,7 @@ Value interpret(Ast *ast, IState *state) {
                     }
                 }
             } 
-            return (Value){VK_NULL, NULL};
+            return construct_null(state);
         }
         case AST_BLOCK: {
             AstBlock *block = (AstBlock *) ast; 
@@ -503,72 +547,58 @@ Value interpret(Ast *ast, IState *state) {
             builtins(obj, 1, args, (Str){"set", 3}, state);
             return val;
         }
-        /*
+        
         case AST_OBJECT: {
             AstObject *object = (AstObject *) ast;
-            Value sz = interpret(object->member_cnt, state);
-            Value obj = object_alloc(sz.integer, state);
-            obj.object->kind = VK_OBJECT;
-            obj.object->parent = interpret(object->extends, state);
-            obj.object->field_cnt = sz.integer;
-            for (size_t i = 0; i < sz.integer; i++) {
+            Value parent = interpret(object->extends, state);
+            size_t sz = object->member_cnt;
+            Object *obj = construct_object(sz, parent, state);
+            for (size_t i = 0; i < sz; i++) {
                 //TODO add check if ast object definition
                 AstDefinition *member = object->members[i];
-                obj.object->fields[i].name = member->name;
-                obj.object->fields[i].value = interpret(member->value, state);
+                obj->val[i].name = member->name;
+                obj->val[i].val = interpret(member->value, state);
             }
             return obj;
         }
-
+        
         case AST_FIELD_ACCESS: { 
             AstFieldAccess *fa = (AstFieldAccess *) ast;
             Value obj = interpret(fa->object, state);
-            for (size_t i = 0; i < obj.object->field_cnt; i++) {
-                if (my_str_cmp(obj.object->fields[i].name, fa->field) == true) {
-                    return obj.object->fields[i].value;
-                }
-            }
-            //TODO add error handling
-            return (Value){};
+            return *field_access(obj, fa->field, state);
         }
-
+        
         case AST_FIELD_ASSIGNMENT: {
             AstFieldAssignment *fa = (AstFieldAssignment *) ast;
-            Value obj = interpret(fa->object, state);
+            Object *obj = interpret(fa->object, state);
             Value val = interpret(fa->value, state);
-            for (size_t i = 0; i < obj.object->field_cnt; i++) {
-                if (my_str_cmp(obj.object->fields[i].name, fa->field) == true) {
-                    obj.object->fields[i].value = val;
-                    return obj;
-                }
-            }
-            //TODO add error handling
-            return (Value){};
-        }*/
+
+            Value *field = field_access(obj, fa->field, state);
+
+            *field = val;
+
+            return field;
+        }
 
         case AST_METHOD_CALL: {
             AstMethodCall *mc = (AstMethodCall *) ast;
-            Value obj = interpret(mc->object, state);
+            Object *obj = interpret(mc->object, state);
             ValueKind vk = *(ValueKind *)obj;
             Value *args = malloc(sizeof(Value) * mc->argument_cnt);
             Value val;
+            for (size_t i = 0; i < mc->argument_cnt; i++) {
+                args[i] = interpret(mc->arguments[i], state);
+            }
             //TODO add cmpt if name is SET or GET
             if (vk == VK_INTEGER || vk == VK_BOOLEAN || vk == VK_NULL) {
-                for (size_t i = 0; i < mc->argument_cnt; i++) {
-                    args[i] = interpret(mc->arguments[i], state);
-                }
                 val = builtins(obj, mc->argument_cnt, args, mc->name, state);
             }
-            /*else {
-                Value val;
-                for (size_t i = 0; i < obj.object->field_cnt; i++) {
-                    if (my_str_cmp(obj.object->fields[i].name, mc->name) == true) {
-                        val = interpret(obj.object->fields[i].value.function, state);
-                        return val;
-                }
-            }*/
-            //TODO add error handling
-            free(args);
+            else {
+                val = method_call(obj, mc->name, mc->argument_cnt, args, state);
+            }
+            if (mc->argument_cnt > 0) {
+                free(args);
+            }
             return val;
         }
 

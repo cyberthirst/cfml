@@ -3,8 +3,8 @@
 #include "parser.h"
 
 #define MAX_ENVS 1024
-#define MAX_VARS 64
-#define MAX_SCOPES 64
+#define MAX_VARS 1024
+#define MAX_SCOPES 1024
 #define MAX_VAR_NAME_LEN 64
 #define MEM_SZ 1024 * 1024 * 4
 #define GLOBAL_ENV_INDEX 0
@@ -20,18 +20,6 @@ typedef enum {
 
 typedef struct Array Array;
 typedef struct Object Object;
-
-/*typedef struct {
-	ValueKind kind;
-	union {
-		bool boolean;
-		i32 integer;
-		AstFunction *function;
-        Array *array;
-        Object *object;
-	};
-} Value;*/
-
 typedef void * Value;
 
 typedef struct {
@@ -107,8 +95,6 @@ typedef struct {
     Environment *envs;
     //ptr to the top of the stack
     int current_env;
-    //functions
-    AstFunction **functions;
 } IState;
 
 

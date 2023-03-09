@@ -133,6 +133,12 @@ bool my_str_cmp(Str a, Str b) {
 	return a.len == b.len && memcmp(a.str, b.str, a.len) == 0;
 }
 
+void print_my_str(Str s) {
+    for (int i = 0; i < s.len; i++) {
+        printf("%c", s.str[i]);
+    }
+}
+
 Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
     /*
         FROM REFERENCE IMPLEMENTATION
@@ -204,7 +210,7 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
             array->val[((Integer *)argv[0])->val] = argv[1];
             return obj;
         }
-        else {
+        /*else {
             Object *object = (Object *)obj;
             for (int i = 0; i < object->field_cnt; i++) {
                 if (my_str_cmp(object->val[i].name, m_name)) {
@@ -213,16 +219,18 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
                 }
             }
             builtins(object->parent, argc, argv, m_name, state);
-        }
-
+        }*/
     }
 
     METHOD("get") { 
         if (kind == VK_ARRAY) {
             Array *array = (Array *)obj;
+            Integer *test = argv[0];
+            int index = test->val;
+            assert(index < array->size);
             return array->val[((Integer *)argv[0])->val];
         }
-        else {
+        /*else {
             Object *object = (Object *)obj;
             for (int i = 0; i < object->field_cnt; i++) {
                 if (my_str_cmp(object->val[i].name, m_name)) {
@@ -230,18 +238,17 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
                 }
             }
             builtins(object->parent, argc, argv, m_name, state);
-        }
+        }*/
 
     }
-
 
     return (Value){NULL};
 }
 
-Value *find_in_env(Str name, Environment *env) {
+Value *find_in_env(Str name, Environment *env, size_t scope_cnt) {
     //we don't want to subtract 1 like in the case of vars because by default there is the global scope on index 0
     //search from all scopes starting on top
-    for (int i = env->scope_cnt; i >= 0; i--) {
+    for (int i = scope_cnt; i >= 0; i--) {
         //search all vars in the scope starting from the latest added
         int j = env->scopes[i].var_cnt;
         //if there are no vars the whole for loop will be skipped
@@ -261,34 +268,17 @@ Value *get_var_ptr(Str name, IState *state) {
     Value *val;
     //try to find the symbol in the current environment
     //each function call creates a new environment
-    val = find_in_env(name, &state->envs[state->current_env]);
+    val = find_in_env(name, &state->envs[state->current_env], state->envs[state->current_env].scope_cnt);
     if (val != NULL) {
         return val;
     }
     //if the current environment doesnt have the symbol try to find it in the global environment
-    val = find_in_env(name, &state->envs[GLOBAL_ENV_INDEX]);
+    val = find_in_env(name, &state->envs[GLOBAL_ENV_INDEX], 0);
     return val;
 }
 
 bool is_primitive(ValueKind kind){
     return kind == VK_BOOLEAN || kind == VK_INTEGER || kind == VK_FUNCTION || kind == VK_NULL;
-}
-
-
-//Value *val is pointer to Value (which is a pointer to the heap)
-void assign_var(Value *val, Value new_val, Heap *heap) {
-    ValueKind kind = *((ValueKind *)*val);
-    //primitive types are immutable
-    //to assign a value to a variable of a primitive type we need to allocate a new value on the heap
-    //and assign the original pointer to the pointer to the new value on the heap
-    if (is_primitive(kind)) {
-        *val = new_val;
-    }
-    //mutable types are modified using refs
-    else {
-
-    }
-
 }
 
 void print_val(Value val) {
@@ -320,16 +310,44 @@ void print_val(Value val) {
             printf("]");
             break;
         }
+        case VK_OBJECT: {
+            Object *obj = (Object *)val;
+            printf("object(");
+            if (*(ValueKind *)obj->parent != VK_NULL) {
+                printf("..=");
+                print_val(obj->parent);
+                if (obj->field_cnt > 0) {
+                    printf(", ");
+                }
+            }
+            for (int i = 0; i < obj->field_cnt; i++) {
+                print_my_str(obj->val[i].name);
+                printf("=");
+                print_val(obj->val[i].val);
+                if (i != obj->field_cnt - 1) {
+                    printf(", ");
+                }
+            }
+            printf(")");
+            break;
+        }
+        default: {
+            printf("unknown value kind");
+            ValueKind kind = *(ValueKind *)val;
+            break;
+        }
     }
 }
 
 void push_env(IState *state) {
     state->current_env++;
     state->envs[state->current_env].scope_cnt = 0;
+    state->envs[state->current_env].scopes[0].var_cnt = 0;
 }
 
 void pop_env(IState *state) {
-    state->envs[state->current_env].scope_cnt = 0;
+    memset(&state->envs[state->current_env], 0, sizeof(Environment));
+    //state->envs[state->current_env].scope_cnt = 0;
     state->current_env--;
 }
 
@@ -344,7 +362,8 @@ void push_scope(IState *state) {
 void pop_scope(IState *state) {
     size_t env = state->current_env;
     size_t scope_cnt = state->envs[env].scope_cnt;
-    state->envs[env].scopes[scope_cnt].var_cnt = 0;
+    //state->envs[env].scopes[scope_cnt].var_cnt = 0;
+    memset(&state->envs[env].scopes[scope_cnt], 0, sizeof(Scope));
     state->envs[env].scope_cnt--;
 }
 
@@ -361,6 +380,10 @@ Value *field_access(Value obj, Str name, IState *state) {
 
 Value method_call(Value obj, Str name, int argc, Value *argv, IState *state) {
     Object *object = (Object *)obj;
+    //if inheriting from a primitive type then call the builtin
+    if ((ValueKind  *)object->kind != VK_OBJECT) {
+        return builtins(obj, argc, argv, name, state);
+    }
     for (int i = 0; i < object->field_cnt; i++) {
         if (my_str_cmp(object->val[i].name, name)) {
             Value ret;
@@ -369,6 +392,7 @@ Value method_call(Value obj, Str name, int argc, Value *argv, IState *state) {
             Field field = object->val[i];
             Function *func = (AstFunction *)field.val;
             for (int j = 0; j < argc; j++) {
+                Integer *tmp = (Integer *)argv[j];
                 add_to_scope(argv[j], func->val->parameters[j], state);
                 
             }
@@ -377,7 +401,7 @@ Value method_call(Value obj, Str name, int argc, Value *argv, IState *state) {
             return state->envs[state->current_env + 1].ret_val = ret;
         }
     }
-    return method_call(object->parent, name, argv, argc, state);
+    return method_call(object->parent, name, argc, argv, state);
 }
 
 
@@ -403,14 +427,16 @@ Value interpret(Ast *ast, IState *state) {
         case AST_VARIABLE_ACCESS: {
             AstVariableAccess *variable_access = (AstVariableAccess *) ast; 
             Value *val = get_var_ptr(variable_access->name, state);
+            if (val == NULL)
+                return construct_null(state);
             return *val;
         }
         case AST_VARIABLE_ASSIGNMENT: {
             AstVariableAssignment *va = (AstVariableAssignment *) ast;
             Value new_val = interpret(va->value, state);
             Value *var_ptr = get_var_ptr(va->name, state);
-            assign_var(var_ptr, new_val, state->heap);
-            return var_ptr;
+            *var_ptr = new_val;
+            return *var_ptr;
         }
         case AST_FUNCTION: {
             AstFunction *function = (AstFunction *) ast;
@@ -424,6 +450,7 @@ Value interpret(Ast *ast, IState *state) {
                 args[i] = interpret(fc->arguments[i], state);
             }
             push_env(state);
+            add_to_scope(construct_null(state), (Str){"this", 4}, state);
             for (size_t i = 0; i < fc->argument_cnt; i++) {
                 add_to_scope(args[i], ((AstFunction *)fun->val)->parameters[i], state);
             }
@@ -496,24 +523,29 @@ Value interpret(Ast *ast, IState *state) {
         case AST_LOOP: {
             AstLoop *loop = (AstLoop *) ast; 
             Value val;
-            push_scope(state);
             while (((Boolean  *)interpret(loop->condition, state))->val) {
+                push_scope(state);
                 val = interpret(loop->body, state);
+                pop_scope(state);
             }
-            pop_scope(state);
             return val;
         }
         case AST_CONDITIONAL: {
             AstConditional *conditional = (AstConditional *) ast; 
             Value cond = interpret(conditional->condition, state);
+            Value ret;
             if ((*(ValueKind *)cond == VK_BOOLEAN && !((Boolean *)cond)->val) || *(ValueKind *)cond == VK_NULL) {
                 //else branch
-                return interpret(conditional->alternative, state);
+                push_scope(state);
+                ret =  interpret(conditional->alternative, state);
             }
             else {
                 //then branch
-                return interpret(conditional->consequent, state);
+                push_scope(state);
+                ret = interpret(conditional->consequent, state);
             }
+            pop_scope(state);
+            return ret;
         }
         case AST_ARRAY: {
             AstArray *array = (AstArray *) ast;
@@ -532,9 +564,10 @@ Value interpret(Ast *ast, IState *state) {
         //TODO generalize to objects
         case AST_INDEX_ACCESS: {
             AstIndexAccess *aa = (AstIndexAccess *) ast;
-            Array *arr = interpret(aa->object, state);
+            Value val = interpret(aa->object, state);
             Integer *idx = interpret(aa->index, state);
-            return builtins(arr, 1, &idx, (Str){"get", 3}, state);
+            return method_call(val, (Str){"get", 3}, 1, &idx, state);
+            //return builtins(val, 1, &idx, (Str){"get", 3}, state);
         }
         //TODO generalize to objects
         case AST_INDEX_ASSIGNMENT: {
@@ -542,10 +575,15 @@ Value interpret(Ast *ast, IState *state) {
             Value obj = interpret(ia->object, state);
             Integer *idx = interpret(ia->index, state);
             Value val = interpret(ia->value, state);
+            //test objects start
+            Object *tst = (Object *)val;
+            Field fld = tst->val[0];
+            Integer *tst2 = (Integer *)fld.val;
+            //test objects end
             Value *args = malloc(sizeof(Value) * 2);
             args[0] = idx; args[1] = val;
-            builtins(obj, 1, args, (Str){"set", 3}, state);
-            return val;
+            return method_call(obj, (Str){"set", 3}, 2, args, state);
+            //return builtins(obj, 1, args, (Str){"set", 3}, state);
         }
         
         case AST_OBJECT: {

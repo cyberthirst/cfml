@@ -2,9 +2,9 @@
 
 #include "parser.h"
 
-#define MAX_ENVS 1024
-#define MAX_VARS 1024
-#define MAX_SCOPES 1024
+#define MAX_ENVS 256
+#define MAX_VARS 256
+#define MAX_SCOPES 256
 #define MAX_VAR_NAME_LEN 64
 #define MEM_SZ 1024 * 1024 * 4
 #define GLOBAL_ENV_INDEX 0
@@ -103,7 +103,7 @@ IState* init_interpreter();
 
 void add_to_scope(Value val, Str name, IState *state);
 
-Value *find_in_env(Str name, Environment *env);
+Value *find_in_env(Str name, Environment *env, size_t scope_cnt);
 
 void print_val(Value val);
 

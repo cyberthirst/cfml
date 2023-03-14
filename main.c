@@ -1,14 +1,27 @@
 #include <stdio.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 
 #include "parser.h"
 #include "ast_interpreter.h"
 #include "arena.h"
 
+#define DEFAULT_HEAP_SIZE 4096
+#define DEFAULT_HEAP_LOG_FILE "heap_log.csv"
 
-static Str
-read_file(Arena *arena, const char *name)
-{
+enum { ACTION_AST_INTERPRET, ACTION_RUN } action = ACTION_AST_INTERPRET;
+char *source_file = NULL;
+size_t heap_size = DEFAULT_HEAP_SIZE;
+char *heap_log_file = DEFAULT_HEAP_LOG_FILE;
+
+
+/*
+   FROM REFENRENCE IMPL
+*/
+static Str read_file(Arena *arena, const char *name) {
 	FILE *f = fopen(name, "rb");
 	if (!f) {
 		printf("failed to open file\n");
@@ -36,18 +49,72 @@ read_file(Arena *arena, const char *name)
 }
 
 
-int main(int argc, char **argv) {
-	if (argc < 2) {
-		fprintf(stderr, "Error: expected at least one argument\n");
-		return 1;
-	}
+
+void usage(const char *progname) {
+    fprintf(stderr, "Usage: %s [options] <file>\n", progname);
+    fprintf(stderr, "Options:\n");
+    fprintf(stderr, "  ast_interpret          Interpret the source file as an abstract syntax tree\n");
+    fprintf(stderr, "  run                    Run the source file as a program\n");
+    fprintf(stderr, "  --heap-size <size>     Set the heap size in bytes (default: %zu)\n", DEFAULT_HEAP_SIZE);
+    fprintf(stderr, "  --heap-log <filename>  Set the heap log file (default: %s)\n", DEFAULT_HEAP_LOG_FILE);
+    exit(EXIT_FAILURE);
+}
+
+int main(int argc, char *argv[]) {
+    size_t optind = 1;
+
+    if (argc < 2) {
+        usage(argv[0]);
+    }
+
+    if (strcmp(argv[optind], "ast_interpret") == 0) {
+        action = ACTION_AST_INTERPRET;
+        optind++;
+    } else if (strcmp(argv[optind], "run") == 0) {
+        action = ACTION_RUN;
+        optind++;
+    } else {
+        usage(argv[0]);
+    }
+    for (; optind < argc && argv[optind][0] == '-'; optind++) {
+        if (strcmp(argv[optind], "--heap-size") == 0) {
+            if (optind + 1 >= argc) {
+                usage(argv[0]);
+            }
+            heap_size = atoi(argv[optind + 1]);
+            optind++;
+        } else if (strcmp(argv[optind], "--heap-log") == 0) {
+            if (optind + 1 >= argc) {
+                usage(argv[0]);
+            }
+            heap_log_file = argv[optind + 1];
+            optind++;
+        } else {
+            usage(argv[0]);
+        }
+    }
+    if (optind + 1 != argc) {
+        usage(argv[0]);
+    }
+    source_file = argv[optind];
+
+	/*
+    switch (action) {
+        case ACTION_AST_INTERPRET:
+            printf("Interpreting the source file '%s' as an abstract syntax tree\n", source_file);
+            break;
+        case ACTION_RUN:
+            printf("Running the source file '%s' with heap size %zu and heap log file '%s'\n", source_file, heap_size, heap_log_file);
+            break;
+        default:
+            fprintf(stderr, "Invalid action %d\n", action);
+            exit(EXIT_FAILURE);
+    }*/
 
 	Arena arena;
 	arena_init(&arena);
 
-    //printf("file: %s\n", argv[2]);
-
-	Str src = read_file(&arena, argv[2]);
+	Str src = read_file(&arena, source_file);
 
 	if (src.str == NULL) {
 		arena_destroy(&arena);
@@ -62,18 +129,12 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-    AstTop *top = (AstTop *) ast;
     IState *state = init_interpreter();
-	Value val = interpret(ast, state);
+	interpret(ast, state);
 
 	free_interpreter(state);	
 
-	//printf("ret_val: ");
-	//print_val(val);
-
-
-
 	arena_destroy(&arena);
 
-	return 0;
+    return EXIT_SUCCESS;
 }

@@ -6,7 +6,7 @@
 #define MAX_VARS 256
 #define MAX_SCOPES 256
 #define MAX_VAR_NAME_LEN 64
-#define MEM_SZ 1024 * 1024 * 1024 
+#define MEM_SZ 1024 * 1024 * 1024 * 5
 #define GLOBAL_ENV_INDEX 0
 
 typedef enum {
@@ -95,6 +95,8 @@ typedef struct {
     Environment *envs;
     //ptr to the top of the stack
     int current_env;
+    //optmization, have just one null
+    Value *null;
 } IState;
 
 

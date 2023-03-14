@@ -4,23 +4,7 @@
 #include "ast_interpreter.h"
 #include "parser.h"
 
-IState* init_interpreter() {
-    IState *state = malloc(sizeof(IState));
-    state->heap = malloc(sizeof(Heap));
-    state->heap->heap_start = malloc(MEM_SZ);
-    state->heap->heap_free = state->heap->heap_start;
-    state->heap->heap_size = 0;
-    state->envs = malloc(sizeof(Environment) * MAX_ENVS);
-    state->current_env = 0;
-    return state;
-}
 
-void free_interpreter(IState *state) {
-    free(state->heap->heap_start);
-    free(state->heap);
-    free(state->envs);
-    free(state);
-}
 
 void *heap_alloc(size_t sz, Heap *heap) {
     if (heap->heap_size + sz > MEM_SZ) {
@@ -28,7 +12,6 @@ void *heap_alloc(size_t sz, Heap *heap) {
         exit(1);
     }
     else {
-        printf("heap size: %zu\n", heap->heap_size);
         void *ptr = heap->heap_free;
 
         heap->heap_free += sz;
@@ -44,8 +27,6 @@ void *heap_alloc(size_t sz, Heap *heap) {
         return ptr;
     }
 }
-
-int test_global = 0;
 
 Array *array_alloc(int size, IState *state) {
     //array is stored as folows:
@@ -119,8 +100,27 @@ Value construct_null(IState *state) {
     Null *null = null_alloc(state);
     null->kind = VK_NULL;
     return null;
+    //return state->null;
 }
 
+IState* init_interpreter() {
+    IState *state = malloc(sizeof(IState));
+    state->heap = malloc(sizeof(Heap));
+    state->heap->heap_start = malloc(MEM_SZ);
+    state->heap->heap_free = state->heap->heap_start;
+    state->heap->heap_size = 0;
+    state->envs = malloc(sizeof(Environment) * MAX_ENVS);
+    state->current_env = 0;
+    state->null = construct_null(state);
+    return state;
+}
+
+void free_interpreter(IState *state) {
+    free(state->heap->heap_start);
+    free(state->heap);
+    free(state->envs);
+    free(state);
+}
 
 void add_to_scope(Value val, Str name, IState *state) {
     size_t env = state->current_env;
@@ -138,8 +138,6 @@ void add_to_scope(Value val, Str name, IState *state) {
 }
 
 bool my_str_cmp(Str a, Str b) {
-    //bool len_eq = a.len == b.len;
-    //bool memcmp_eq = memcmp(a.str, b.str, a.len) == 0;
 	return a.len == b.len && memcmp(a.str, b.str, a.len) == 0;
 }
 
@@ -159,18 +157,6 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
 			if (sizeof(name) - 1 == method_name_len && memcmp(name, method_name, method_name_len) == 0) /* body*/
     ValueKind kind = *(ValueKind *)obj;
     if (kind == VK_INTEGER || kind == VK_BOOLEAN || kind == VK_NULL) { 
-        /*printf("num of args: %d\n", argc);
-        if (argc == 2){
-            if (kind == VK_INTEGER) {
-                printf("kind is integer\n");
-            }
-            else if (kind == VK_BOOLEAN) {
-                printf("kind is boolean\n");
-            }
-            else if (kind == VK_NULL) {
-                printf("kind is null\n");
-            }
-        }*/
         assert(argc == 1);
         METHOD("+") {
             return construct_integer(((Integer *)obj)->val + ((Integer *)argv[0])->val, state);
@@ -211,9 +197,6 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
             if (kind == VK_INTEGER)
                 return construct_boolean(((Integer *)obj)->val != ((Integer *)argv[0])->val, state);
             else if (kind == VK_NULL){
-                //printf("printing from comparison\n");
-                //print_val(argv[0]);
-                //print_val(construct_boolean(*(ValueKind *)argv[0] != VK_NULL, state));
                 return construct_boolean(*(ValueKind *)argv[0] != VK_NULL, state);
             }
             else
@@ -596,8 +579,8 @@ Value interpret(Ast *ast, IState *state) {
             Value val = interpret(aa->object, state);
             Integer *idx = interpret(aa->index, state);
             return method_call(val, (Str){(u8 *)"get", 3}, 1, &idx, state);
-            //return builtins(val, 1, &idx, (Str){"get", 3}, state);
         }
+        
         //TODO generalize to objects
         case AST_INDEX_ASSIGNMENT: {
             AstIndexAssignment *ia = (AstIndexAssignment *) ast;
@@ -645,8 +628,6 @@ Value interpret(Ast *ast, IState *state) {
 
         case AST_METHOD_CALL: {
             AstMethodCall *mc = (AstMethodCall *) ast;
-            test_global += 1;
-            int test_tmp = test_global;
             Object *obj = interpret(mc->object, state);
             assert(obj->kind == VK_OBJECT || is_primitive(obj->kind));
             ValueKind vk = *(ValueKind *)obj;
@@ -656,13 +637,7 @@ Value interpret(Ast *ast, IState *state) {
                 args[i] = interpret(mc->arguments[i], state);
             }
             if (vk == VK_INTEGER || vk == VK_BOOLEAN || vk == VK_NULL) {
-                /*printf("calling from AST_METHOD_CALL\n");
-                if (mc->argument_cnt == 2){
-                    printf("printing the object\n");
-                    print_val(obj);
-                }*/
                 val = builtins(obj, mc->argument_cnt, args, mc->name, state);
-                //
             }
             else {
                 val = method_call(obj, mc->name, mc->argument_cnt, args, state);

@@ -28,6 +28,7 @@ void *heap_alloc(size_t sz, Heap *heap) {
         exit(1);
     }
     else {
+        printf("heap size: %zu\n", heap->heap_size);
         void *ptr = heap->heap_free;
 
         heap->heap_free += sz;
@@ -43,6 +44,8 @@ void *heap_alloc(size_t sz, Heap *heap) {
         return ptr;
     }
 }
+
+int test_global = 0;
 
 Array *array_alloc(int size, IState *state) {
     //array is stored as folows:
@@ -156,6 +159,18 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
 			if (sizeof(name) - 1 == method_name_len && memcmp(name, method_name, method_name_len) == 0) /* body*/
     ValueKind kind = *(ValueKind *)obj;
     if (kind == VK_INTEGER || kind == VK_BOOLEAN || kind == VK_NULL) { 
+        /*printf("num of args: %d\n", argc);
+        if (argc == 2){
+            if (kind == VK_INTEGER) {
+                printf("kind is integer\n");
+            }
+            else if (kind == VK_BOOLEAN) {
+                printf("kind is boolean\n");
+            }
+            else if (kind == VK_NULL) {
+                printf("kind is null\n");
+            }
+        }*/
         assert(argc == 1);
         METHOD("+") {
             return construct_integer(((Integer *)obj)->val + ((Integer *)argv[0])->val, state);
@@ -195,8 +210,12 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
         METHOD("!=") { 
             if (kind == VK_INTEGER)
                 return construct_boolean(((Integer *)obj)->val != ((Integer *)argv[0])->val, state);
-            else if (kind == VK_NULL)
+            else if (kind == VK_NULL){
+                //printf("printing from comparison\n");
+                //print_val(argv[0]);
+                //print_val(construct_boolean(*(ValueKind *)argv[0] != VK_NULL, state));
                 return construct_boolean(*(ValueKind *)argv[0] != VK_NULL, state);
+            }
             else
                 return construct_boolean(((Boolean *)obj)->val != ((Boolean *)argv[0])->val, state);
         }
@@ -204,10 +223,10 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
     if (kind == VK_BOOLEAN) {
         assert(argc == 1);
         METHOD("&") {
-            return construct_boolean(((Boolean *)obj)->val == ((Boolean *)argv[0])->val, state);
+            return construct_boolean(((Boolean *)obj)->val & ((Boolean *)argv[0])->val, state);
         }
         METHOD("|") {
-            return construct_boolean(((Boolean *)obj)->val != ((Boolean *)argv[0])->val, state);
+            return construct_boolean(((Boolean *)obj)->val | ((Boolean *)argv[0])->val, state);
         }
     }
 
@@ -365,6 +384,7 @@ void pop_scope(IState *state) {
 Value *field_access(Value obj, Str name, IState *state) {
     Object *object = (Object *)obj;
     assert(*(ValueKind *)obj == VK_OBJECT);
+    //print_val(obj);
     for (size_t i = 0; i < object->field_cnt; i++) {
         if (my_str_cmp(object->val[i].name, name)) {
             return &object->val[i].val;
@@ -625,6 +645,8 @@ Value interpret(Ast *ast, IState *state) {
 
         case AST_METHOD_CALL: {
             AstMethodCall *mc = (AstMethodCall *) ast;
+            test_global += 1;
+            int test_tmp = test_global;
             Object *obj = interpret(mc->object, state);
             assert(obj->kind == VK_OBJECT || is_primitive(obj->kind));
             ValueKind vk = *(ValueKind *)obj;
@@ -634,6 +656,11 @@ Value interpret(Ast *ast, IState *state) {
                 args[i] = interpret(mc->arguments[i], state);
             }
             if (vk == VK_INTEGER || vk == VK_BOOLEAN || vk == VK_NULL) {
+                /*printf("calling from AST_METHOD_CALL\n");
+                if (mc->argument_cnt == 2){
+                    printf("printing the object\n");
+                    print_val(obj);
+                }*/
                 val = builtins(obj, mc->argument_cnt, args, mc->name, state);
                 //
             }

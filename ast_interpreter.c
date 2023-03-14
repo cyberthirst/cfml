@@ -15,6 +15,13 @@ IState* init_interpreter() {
     return state;
 }
 
+void free_interpreter(IState *state) {
+    free(state->heap->heap_start);
+    free(state->heap);
+    free(state->envs);
+    free(state);
+}
+
 void *heap_alloc(size_t sz, Heap *heap) {
     if (heap->heap_size + sz > MEM_SZ) {
         printf("Out of memory\n");
@@ -37,7 +44,7 @@ void *heap_alloc(size_t sz, Heap *heap) {
     }
 }
 
-ValueKind *array_alloc(int size, IState *state) {
+Array *array_alloc(int size, IState *state) {
     //array is stored as folows:
     // ValueKind | size_t | Value[size]
     // ValueKind == VK_ARRAY | size_t == numOfElems(array) | Value[size] == array of values (aka pointers to the actual valuesa)
@@ -51,7 +58,7 @@ Value construct_array(int size, IState *state) {
     return array;
 }
 
-ValueKind *object_alloc(int size, IState *state) {
+Object *object_alloc(int size, IState *state) {
     //object is stored as follows:
     // ValueKind | parent | size_t | Value[size]
     // ValueKind == VK_OBJECT | parent == VK_OBJECT | size_t == numOfFields(object) | Value[size] == array of Values (aka pointers members of the object)
@@ -66,7 +73,7 @@ Value construct_object(int size, Value parent, IState *state) {
     return object;
 }
 
-ValueKind *function_alloc(IState *state) {
+Function *function_alloc(IState *state) {
     return heap_alloc(sizeof(Function), state->heap);
 }
 
@@ -77,7 +84,7 @@ Value construct_function(AstFunction *ast_func, IState *state) {
     return func;
 }
 
-ValueKind *integer_alloc(IState *state) {
+Integer *integer_alloc(IState *state) {
     return heap_alloc(sizeof(Integer), state->heap);
 }
 
@@ -88,7 +95,7 @@ Value construct_integer(i32 val, IState *state) {
     return integer;
 }
 
-ValueKind *boolean_alloc(IState *state) {
+Boolean *boolean_alloc(IState *state) {
     return heap_alloc(sizeof(Boolean), state->heap);
 }
 
@@ -99,7 +106,7 @@ Value construct_boolean(bool val, IState *state) {
     return boolean;
 }
 
-ValueKind *null_alloc(IState *state) {
+Null *null_alloc(IState *state) {
     return heap_alloc(sizeof(Null), state->heap);
 }
 
@@ -128,13 +135,13 @@ void add_to_scope(Value val, Str name, IState *state) {
 }
 
 bool my_str_cmp(Str a, Str b) {
-    bool len_eq = a.len == b.len;
-    bool memcmp_eq = memcmp(a.str, b.str, a.len) == 0;
+    //bool len_eq = a.len == b.len;
+    //bool memcmp_eq = memcmp(a.str, b.str, a.len) == 0;
 	return a.len == b.len && memcmp(a.str, b.str, a.len) == 0;
 }
 
 void print_my_str(Str s) {
-    for (int i = 0; i < s.len; i++) {
+    for (size_t i = 0; i < s.len; i++) {
         printf("%c", s.str[i]);
     }
 }
@@ -216,7 +223,7 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
         if (kind == VK_ARRAY) {
             Array *array = (Array *)obj;
             Integer *test = argv[0];
-            int index = test->val;
+            size_t index = test->val;
             assert(index < array->size);
             return array->val[((Integer *)argv[0])->val];
         }
@@ -281,7 +288,7 @@ void print_val(Value val) {
         }
         case VK_ARRAY: {
             printf("[");
-            for (int i = 0; i < ((Array *)val)->size; i++) {
+            for (size_t i = 0; i < ((Array *)val)->size; i++) {
                 print_val(((Array *)val)->val[i]);
                 if (i != ((Array *)val)->size - 1) {
                     printf(", ");
@@ -300,7 +307,7 @@ void print_val(Value val) {
                     printf(", ");
                 }
             }
-            for (int i = 0; i < obj->field_cnt; i++) {
+            for (size_t i = 0; i < obj->field_cnt; i++) {
                 print_my_str(obj->val[i].name);
                 printf("=");
                 print_val(obj->val[i].val);
@@ -313,7 +320,6 @@ void print_val(Value val) {
         }
         default: {
             printf("unknown value kind");
-            ValueKind kind = *(ValueKind *)val;
             break;
         }
     }
@@ -358,7 +364,8 @@ void pop_scope(IState *state) {
 
 Value *field_access(Value obj, Str name, IState *state) {
     Object *object = (Object *)obj;
-    for (int i = 0; i < object->field_cnt; i++) {
+    assert(*(ValueKind *)obj == VK_OBJECT);
+    for (size_t i = 0; i < object->field_cnt; i++) {
         if (my_str_cmp(object->val[i].name, name)) {
             return &object->val[i].val;
         }
@@ -369,18 +376,18 @@ Value *field_access(Value obj, Str name, IState *state) {
 Value method_call(Value obj, Str name, int argc, Value *argv, IState *state) {
     Object *object = (Object *)obj;
     //if inheriting from a primitive type then call the builtin
-    if ((ValueKind  *)object->kind != VK_OBJECT) {
+    if (object->kind != VK_OBJECT) {
         return builtins(obj, argc, argv, name, state);
     }
-    for (int i = 0; i < object->field_cnt; i++) {
+    for (size_t i = 0; i < object->field_cnt; i++) {
         if (my_str_cmp(object->val[i].name, name)) {
             Value ret;
             push_env(state);
-            add_to_scope(obj, (Str){"this", 4}, state);
+            add_to_scope(obj, (Str){(u8 *)"this", 4}, state);
             Field field = object->val[i];
-            Function *func = (AstFunction *)field.val;
+            assert(*(ValueKind *)field.val == VK_FUNCTION);
+            Function *func = (Function *)field.val;
             for (int j = 0; j < argc; j++) {
-                Integer *tmp = (Integer *)argv[j];
                 add_to_scope(argv[j], func->val->parameters[j], state);
                 
             }
@@ -445,7 +452,7 @@ Value interpret(Ast *ast, IState *state) {
                 args[i] = interpret(fc->arguments[i], state);
             }
             push_env(state);
-            add_to_scope(construct_null(state), (Str){"this", 4}, state);
+            add_to_scope(construct_null(state), (Str){(u8 *)"this", 4}, state);
             for (size_t i = 0; i < fc->argument_cnt; i++) {
                 add_to_scope(args[i], ((AstFunction *)fun->val)->parameters[i], state);
             }
@@ -518,13 +525,14 @@ Value interpret(Ast *ast, IState *state) {
         case AST_LOOP: {
             AstLoop *loop = (AstLoop *) ast; 
             Value cond = interpret(loop->condition, state);
-            Value val;
             while (true) {
                 if ((*(ValueKind *)cond == VK_BOOLEAN && !((Boolean *)cond)->val) || *(ValueKind *)cond == VK_NULL) {
                     return construct_null(state);
                 }
                 push_scope(state);
-                val = interpret(loop->body, state);
+                //we don't care about the return value of the loop body
+                //if the condition is false we return null
+                interpret(loop->body, state);
                 pop_scope(state);
                 cond = interpret(loop->condition, state);
             }
@@ -549,10 +557,12 @@ Value interpret(Ast *ast, IState *state) {
         case AST_ARRAY: {
             AstArray *array = (AstArray *) ast;
             Integer *sz = interpret(array->size, state);
+            assert(sz->kind == VK_INTEGER);
+            assert(sz->val >= 0);
             //alloc space for the array and gete the value (pointer) to the array
             Array *arr = construct_array(sz->val, state);
             //eval the initializer `sz` times and assign it to the array
-            for (size_t i = 0; i < sz->val; i++) {
+            for (size_t i = 0; i < (size_t)sz->val; i++) {
                 //need to eval the initializer in tmp scope
                 push_scope(state);
                 arr->val[i] = interpret(array->initializer, state);
@@ -565,7 +575,7 @@ Value interpret(Ast *ast, IState *state) {
             AstIndexAccess *aa = (AstIndexAccess *) ast;
             Value val = interpret(aa->object, state);
             Integer *idx = interpret(aa->index, state);
-            return method_call(val, (Str){"get", 3}, 1, &idx, state);
+            return method_call(val, (Str){(u8 *)"get", 3}, 1, &idx, state);
             //return builtins(val, 1, &idx, (Str){"get", 3}, state);
         }
         //TODO generalize to objects
@@ -574,15 +584,9 @@ Value interpret(Ast *ast, IState *state) {
             Value obj = interpret(ia->object, state);
             Integer *idx = interpret(ia->index, state);
             Value val = interpret(ia->value, state);
-            //test objects start
-            Object *tst = (Object *)val;
-            Field fld = tst->val[0];
-            Integer *tst2 = (Integer *)fld.val;
-            //test objects end
             Value *args = malloc(sizeof(Value) * 2);
             args[0] = idx; args[1] = val;
-            return method_call(obj, (Str){"set", 3}, 2, args, state);
-            //return builtins(obj, 1, args, (Str){"set", 3}, state);
+            return method_call(obj, (Str){(u8 *)"set", 3}, 2, args, state);
         }
         
         case AST_OBJECT: {
@@ -591,8 +595,8 @@ Value interpret(Ast *ast, IState *state) {
             size_t sz = object->member_cnt;
             Object *obj = construct_object(sz, parent, state);
             for (size_t i = 0; i < sz; i++) {
-                //TODO add check if ast object definition
-                AstDefinition *member = object->members[i];
+                assert(object->members[i]->kind == AST_DEFINITION);
+                AstDefinition *member = (AstDefinition *)object->members[i];
                 obj->val[i].name = member->name;
                 push_scope(state);
                 obj->val[i].val = interpret(member->value, state);
@@ -621,10 +625,8 @@ Value interpret(Ast *ast, IState *state) {
 
         case AST_METHOD_CALL: {
             AstMethodCall *mc = (AstMethodCall *) ast;
-            if (my_str_cmp(mc->name, (Str) {"inner_solve", 11})) {
-                int tmp = 666;
-            }
             Object *obj = interpret(mc->object, state);
+            assert(obj->kind == VK_OBJECT || is_primitive(obj->kind));
             ValueKind vk = *(ValueKind *)obj;
             Value *args = malloc(sizeof(Value) * mc->argument_cnt);
             Value val;
@@ -633,6 +635,7 @@ Value interpret(Ast *ast, IState *state) {
             }
             if (vk == VK_INTEGER || vk == VK_BOOLEAN || vk == VK_NULL) {
                 val = builtins(obj, mc->argument_cnt, args, mc->name, state);
+                //
             }
             else {
                 val = method_call(obj, mc->name, mc->argument_cnt, args, state);
@@ -645,6 +648,7 @@ Value interpret(Ast *ast, IState *state) {
 
         default: {
             printf("Ast node not implemented\n");
+            exit(1);
             return NULL;
         }
     }

@@ -65,6 +65,9 @@ int main(int argc, char **argv) {
     AstTop *top = (AstTop *) ast;
     IState *state = init_interpreter();
 	Value val = interpret(ast, state);
+
+	free_interpreter(state);	
+
 	//printf("ret_val: ");
 	//print_val(val);
 

@@ -101,6 +101,8 @@ typedef struct {
 //initializes the state of the interpreter
 IState* init_interpreter();
 
+void free_interpreter(IState *state);
+
 void add_to_scope(Value val, Str name, IState *state);
 
 Value *find_in_env(Str name, Environment *env, size_t scope_cnt);

@@ -4,7 +4,7 @@
 #include "ast_interpreter.h"
 #include "parser.h"
 
-
+const long long int MEM_SZ = 1024L * 1024 * 1024 * 1;
 
 void *heap_alloc(size_t sz, Heap *heap) {
     if (heap->heap_size + sz > MEM_SZ) {
@@ -137,16 +137,6 @@ void add_to_scope(Value val, Str name, IState *state) {
     }
 }
 
-bool my_str_cmp(Str a, Str b) {
-	return a.len == b.len && memcmp(a.str, b.str, a.len) == 0;
-}
-
-void print_my_str(Str s) {
-    for (size_t i = 0; i < s.len; i++) {
-        printf("%c", s.str[i]);
-    }
-}
-
 Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
     /*
         FROM REFERENCE IMPLEMENTATION
@@ -185,16 +175,22 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
         METHOD("<") {
             return construct_boolean(((Integer *)obj)->val < ((Integer *)argv[0])->val, state);
         }
-        METHOD("==") { 
-            if (kind == VK_INTEGER)
+        METHOD("==") {
+            if (kind == VK_INTEGER && *(ValueKind *)argv[0] != VK_INTEGER){
+                return construct_boolean(false, state);
+            }
+            else if (kind == VK_INTEGER)
                 return construct_boolean(((Integer *)obj)->val == ((Integer *)argv[0])->val, state);
             else if (kind == VK_NULL)
                 return construct_boolean(*(ValueKind *)argv[0] == VK_NULL, state);
             else
                 return construct_boolean(((Boolean *)obj)->val == ((Boolean *)argv[0])->val, state);
         }
-        METHOD("!=") { 
-            if (kind == VK_INTEGER)
+        METHOD("!=") {
+            if (kind == VK_INTEGER && *(ValueKind *)argv[0] != VK_INTEGER){
+                return construct_boolean(true, state);
+            }
+            else if (kind == VK_INTEGER)
                 return construct_boolean(((Integer *)obj)->val != ((Integer *)argv[0])->val, state);
             else if (kind == VK_NULL){
                 return construct_boolean(*(ValueKind *)argv[0] != VK_NULL, state);
@@ -244,7 +240,7 @@ Value *find_in_env(Str name, Environment *env, size_t scope_cnt) {
         //if there are > 0 vars we need to decrement j to properly index the var in the vars array
         if (j > 0) j--;
         for (;j >= 0; j--) {
-            if (my_str_cmp(env->scopes[i].vars[j].name, name) == true) {
+            if (str_eq(env->scopes[i].vars[j].name, name) == true) {
                     return &env->scopes[i].vars[j].val;
             }
         }
@@ -310,7 +306,8 @@ void print_val(Value val) {
                 }
             }
             for (size_t i = 0; i < obj->field_cnt; i++) {
-                print_my_str(obj->val[i].name);
+                //print_my_str(obj->val[i].name);
+                printf("%.*s", (int)obj->val[i].name.len, obj->val[i].name.str);
                 printf("=");
                 print_val(obj->val[i].val);
                 if (i != obj->field_cnt - 1) {
@@ -369,7 +366,7 @@ Value *field_access(Value obj, Str name, IState *state) {
     assert(*(ValueKind *)obj == VK_OBJECT);
     //print_val(obj);
     for (size_t i = 0; i < object->field_cnt; i++) {
-        if (my_str_cmp(object->val[i].name, name)) {
+        if (str_eq(object->val[i].name, name)) {
             return &object->val[i].val;
         }
     }
@@ -383,7 +380,7 @@ Value method_call(Value obj, Str name, int argc, Value *argv, IState *state) {
         return builtins(obj, argc, argv, name, state);
     }
     for (size_t i = 0; i < object->field_cnt; i++) {
-        if (my_str_cmp(object->val[i].name, name)) {
+        if (str_eq(object->val[i].name, name)) {
             Value ret;
             push_env(state);
             add_to_scope(obj, (Str){(u8 *)"this", 4}, state);

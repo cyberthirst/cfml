@@ -6,7 +6,9 @@
 #define MAX_VARS 256
 #define MAX_SCOPES 256
 #define MAX_VAR_NAME_LEN 64
-#define MEM_SZ 1024 * 1024 * 1024 * 5
+//#define MEM_SZ (1024LL * 1024 * 1024 * 2)
+extern const long long int MEM_SZ;
+
 #define GLOBAL_ENV_INDEX 0
 
 typedef enum {
@@ -89,7 +91,7 @@ typedef struct {
     //ptr to the heap where we store the vars
     Heap *heap;
     //size of the currently allocated memory
-    size_t heap_size;
+    long long int heap_size;
     //environments for functions
     //index 0 is the global environment
     Environment *envs;

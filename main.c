@@ -14,7 +14,7 @@
 
 enum { ACTION_AST_INTERPRET, ACTION_RUN } action = ACTION_AST_INTERPRET;
 char *source_file = NULL;
-size_t heap_size = DEFAULT_HEAP_SIZE;
+long long int heap_size = DEFAULT_HEAP_SIZE;
 char *heap_log_file = DEFAULT_HEAP_LOG_FILE;
 
 
@@ -55,7 +55,7 @@ void usage(const char *progname) {
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  ast_interpret          Interpret the source file as an abstract syntax tree\n");
     fprintf(stderr, "  run                    Run the source file as a program\n");
-    fprintf(stderr, "  --heap-size <size>     Set the heap size in bytes (default: %zu)\n", DEFAULT_HEAP_SIZE);
+    fprintf(stderr, "  --heap-size <size>     Set the heap size in bytes (default: %d)\n", DEFAULT_HEAP_SIZE);
     fprintf(stderr, "  --heap-log <filename>  Set the heap log file (default: %s)\n", DEFAULT_HEAP_LOG_FILE);
     exit(EXIT_FAILURE);
 }

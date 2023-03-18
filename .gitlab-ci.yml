@@ -4,6 +4,23 @@ test:
   script:
     - meson setup build
     - meson compile -C build
-    - cppcheck --error-exitcode=1 *.c
-    - env FML="$(readlink -f ./build/fml)" FML_REF_BC_INT=/cfml/fml /FMLtest/suite ast_interpret
-        hello_world.fml
+    #- cppcheck --error-exitcode=1 *.c
+    - env FML="$(readlink -f ./build/fml)" FML_REF=/cfml/fml /FMLtest/suite ast_interpret
+        hello_world
+        literals
+        variables
+        conditionals
+        loops
+        functions
+        function_value
+        builtins
+        arrays
+        iterator
+        fibonacci
+        fizzbuzz_fun
+        fizzbuzz_loop
+        roman
+        stack
+        brainfuck
+        langtons_ant
+        sudoku

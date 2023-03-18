@@ -22,7 +22,7 @@ typedef enum {
 
 typedef struct Array Array;
 typedef struct Object Object;
-typedef void * Value;
+typedef ValueKind * Value;
 
 typedef struct {
     ValueKind kind;

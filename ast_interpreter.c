@@ -176,24 +176,24 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
             return construct_boolean(((Integer *)obj)->val < ((Integer *)argv[0])->val, state);
         }
         METHOD("==") {
-            if (kind == VK_INTEGER && *(ValueKind *)argv[0] != VK_INTEGER){
+            if (kind == VK_INTEGER && *argv[0] != VK_INTEGER){
                 return construct_boolean(false, state);
             }
             else if (kind == VK_INTEGER)
                 return construct_boolean(((Integer *)obj)->val == ((Integer *)argv[0])->val, state);
             else if (kind == VK_NULL)
-                return construct_boolean(*(ValueKind *)argv[0] == VK_NULL, state);
+                return construct_boolean(*argv[0] == VK_NULL, state);
             else
                 return construct_boolean(((Boolean *)obj)->val == ((Boolean *)argv[0])->val, state);
         }
         METHOD("!=") {
-            if (kind == VK_INTEGER && *(ValueKind *)argv[0] != VK_INTEGER){
+            if (kind == VK_INTEGER && *argv[0] != VK_INTEGER){
                 return construct_boolean(true, state);
             }
             else if (kind == VK_INTEGER)
                 return construct_boolean(((Integer *)obj)->val != ((Integer *)argv[0])->val, state);
             else if (kind == VK_NULL){
-                return construct_boolean(*(ValueKind *)argv[0] != VK_NULL, state);
+                return construct_boolean(*argv[0] != VK_NULL, state);
             }
             else
                 return construct_boolean(((Boolean *)obj)->val != ((Boolean *)argv[0])->val, state);
@@ -267,7 +267,7 @@ bool is_primitive(ValueKind kind){
 }
 
 void print_val(Value val) {
-    switch(*(ValueKind *)val) {
+    switch(*val) {
         case VK_INTEGER: {
             printf("%d", ((Integer *)val)->val);
             break;
@@ -363,7 +363,7 @@ void pop_scope(IState *state) {
 
 Value *field_access(Value obj, Str name, IState *state) {
     Object *object = (Object *)obj;
-    assert(*(ValueKind *)obj == VK_OBJECT);
+    assert(*obj == VK_OBJECT);
     //print_val(obj);
     for (size_t i = 0; i < object->field_cnt; i++) {
         if (str_eq(object->val[i].name, name)) {
@@ -383,9 +383,9 @@ Value method_call(Value obj, Str name, int argc, Value *argv, IState *state) {
         if (str_eq(object->val[i].name, name)) {
             Value ret;
             push_env(state);
-            add_to_scope(obj, (Str){(u8 *)"this", 4}, state);
+            add_to_scope(obj, STR("this"), state);
             Field field = object->val[i];
-            assert(*(ValueKind *)field.val == VK_FUNCTION);
+            assert(*field.val == VK_FUNCTION);
             Function *func = (Function *)field.val;
             for (int j = 0; j < argc; j++) {
                 add_to_scope(argv[j], func->val->parameters[j], state);
@@ -452,7 +452,7 @@ Value interpret(Ast *ast, IState *state) {
                 args[i] = interpret(fc->arguments[i], state);
             }
             push_env(state);
-            add_to_scope(construct_null(state), (Str){(u8 *)"this", 4}, state);
+            add_to_scope(construct_null(state), STR("this"), state);
             for (size_t i = 0; i < fc->argument_cnt; i++) {
                 add_to_scope(args[i], ((AstFunction *)fun->val)->parameters[i], state);
             }
@@ -526,7 +526,7 @@ Value interpret(Ast *ast, IState *state) {
             AstLoop *loop = (AstLoop *) ast; 
             Value cond = interpret(loop->condition, state);
             while (true) {
-                if ((*(ValueKind *)cond == VK_BOOLEAN && !((Boolean *)cond)->val) || *(ValueKind *)cond == VK_NULL) {
+                if ((*cond == VK_BOOLEAN && !((Boolean *)cond)->val) || *cond == VK_NULL) {
                     return construct_null(state);
                 }
                 push_scope(state);
@@ -541,7 +541,7 @@ Value interpret(Ast *ast, IState *state) {
             AstConditional *conditional = (AstConditional *) ast; 
             Value cond = interpret(conditional->condition, state);
             Value ret;
-            if ((*(ValueKind *)cond == VK_BOOLEAN && !((Boolean *)cond)->val) || *(ValueKind *)cond == VK_NULL) {
+            if ((*cond == VK_BOOLEAN && !((Boolean *)cond)->val) || *cond == VK_NULL) {
                 //else branch
                 push_scope(state);
                 ret =  interpret(conditional->alternative, state);
@@ -570,23 +570,25 @@ Value interpret(Ast *ast, IState *state) {
             }
             return arr;
         }
-        //TODO generalize to objects
+
         case AST_INDEX_ACCESS: {
             AstIndexAccess *aa = (AstIndexAccess *) ast;
             Value val = interpret(aa->object, state);
             Integer *idx = interpret(aa->index, state);
-            return method_call(val, (Str){(u8 *)"get", 3}, 1, &idx, state);
+            //return method_call(val, (Str){(u8 *)"get", 3}, 1, &idx, state);
+            return method_call(val, STR("get"), 1, &idx, state);
         }
-        
-        //TODO generalize to objects
+
         case AST_INDEX_ASSIGNMENT: {
             AstIndexAssignment *ia = (AstIndexAssignment *) ast;
             Value obj = interpret(ia->object, state);
             Integer *idx = interpret(ia->index, state);
             Value val = interpret(ia->value, state);
-            Value *args = malloc(sizeof(Value) * 2);
+            //Value *args = malloc(sizeof(Value) * 2);
+            Value args[2];
             args[0] = idx; args[1] = val;
-            return method_call(obj, (Str){(u8 *)"set", 3}, 2, args, state);
+            //return method_call(obj, (Str){(u8 *)"set", 3}, 2, args, state);
+            return method_call(obj, STR("set"), 2, args, state);
         }
         
         case AST_OBJECT: {
@@ -639,9 +641,7 @@ Value interpret(Ast *ast, IState *state) {
             else {
                 val = method_call(obj, mc->name, mc->argument_cnt, args, state);
             }
-            if (mc->argument_cnt > 0) {
-                free(args);
-            }
+            free(args);
             return val;
         }
 

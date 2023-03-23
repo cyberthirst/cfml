@@ -12,7 +12,7 @@
 #define DEFAULT_HEAP_SIZE 4096
 #define DEFAULT_HEAP_LOG_FILE "heap_log.csv"
 
-enum { ACTION_AST_INTERPRET, ACTION_RUN } action = ACTION_AST_INTERPRET;
+enum { ACTION_AST_INTERPRET, ACTION_BC_INTERPRET, ACTION_RUN } action = ACTION_AST_INTERPRET;
 char *source_file = NULL;
 long long int heap_size = DEFAULT_HEAP_SIZE;
 char *heap_log_file = DEFAULT_HEAP_LOG_FILE;
@@ -70,6 +70,9 @@ int main(int argc, char *argv[]) {
     if (strcmp(argv[optind], "ast_interpret") == 0) {
         action = ACTION_AST_INTERPRET;
         optind++;
+    } else if (strcmp(argv[optind], "bc_interpret") == 0) {
+        action = ACTION_BC_INTERPRET;
+        optind++;
     } else if (strcmp(argv[optind], "run") == 0) {
         action = ACTION_RUN;
         optind++;
@@ -98,43 +101,42 @@ int main(int argc, char *argv[]) {
     }
     source_file = argv[optind];
 
-	/*
     switch (action) {
-        case ACTION_AST_INTERPRET:
-            printf("Interpreting the source file '%s' as an abstract syntax tree\n", source_file);
+        case ACTION_AST_INTERPRET: {
+            Arena arena;
+	        arena_init(&arena);
+
+	        Str src = read_file(&arena, source_file);
+
+	        if (src.str == NULL) {
+		        arena_destroy(&arena);
+		        return 1;
+	        }
+
+	        Ast *ast = parse_src(&arena, src);
+
+	        if (ast == NULL) {
+		        fprintf(stderr, "Failed to parse source\n");
+		        arena_destroy(&arena);
+                return 1;
+	        }
+
+            IState *state = init_interpreter();
+	        interpret(ast, state);
+
+	        free_interpreter(state);
+
+	        arena_destroy(&arena);
             break;
-        case ACTION_RUN:
-            printf("Running the source file '%s' with heap size %zu and heap log file '%s'\n", source_file, heap_size, heap_log_file);
+        }
+        case ACTION_BC_INTERPRET: {
+            printf("Running the bc_interpreter on source file %s\n", source_file);
             break;
+        }
         default:
             fprintf(stderr, "Invalid action %d\n", action);
             exit(EXIT_FAILURE);
-    }*/
-
-	Arena arena;
-	arena_init(&arena);
-
-	Str src = read_file(&arena, source_file);
-
-	if (src.str == NULL) {
-		arena_destroy(&arena);
-		return 1;
-	}
-
-	Ast *ast = parse_src(&arena, src);
-
-	if (ast == NULL) {
-		fprintf(stderr, "Failed to parse source\n");
-		arena_destroy(&arena);
-		return 1;
-	}
-
-    IState *state = init_interpreter();
-	interpret(ast, state);
-
-	free_interpreter(state);	
-
-	arena_destroy(&arena);
+    }
 
     return EXIT_SUCCESS;
 }

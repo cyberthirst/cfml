@@ -5,22 +5,23 @@ test:
     - meson setup build
     - meson compile -C build
     #- cppcheck --error-exitcode=1 *.c
-    - env FML="$(readlink -f ./build/fml)" FML_REF=/cfml/fml /FMLtest/suite ast_interpret
+    - env FML="$(readlink -f ./build/fml)" FML_REF=/cfml/fml /FMLtest/suite bc_interpret
         hello_world
-        literals
-        variables
-        conditionals
-        loops
-        functions
-        function_value
-        builtins
+        escape
+        push_pop
+        locals
+        globals
+        condition
+        loop
+        function0
+        function1
+        function_with_locals
+        function_with_globals
+        recursive_function
+        aliasing
+        object
+        methods
+        operators
+        dispatch
         arrays
-        iterator
-        fibonacci
-        fizzbuzz_fun
-        fizzbuzz_loop
-        roman
-        stack
-        brainfuck
-        langtons_ant
-        sudoku
+        getters_and_settersudoku

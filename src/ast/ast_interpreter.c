@@ -2,7 +2,7 @@
 #include <assert.h>
 
 #include "ast_interpreter.h"
-#include "parser.h"
+#include "../parser.h"
 
 const long long int MEM_SZ = 1024L * 1024 * 1024 * 1;
 

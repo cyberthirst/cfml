@@ -3,8 +3,8 @@ project('fml', 'c',
   default_options : ['warning_level=3'])
 
 exe = executable('fml',
-  'main.c',
-  'arena.c',
-  'parser.c',
-  'ast_interpreter.c',
+  'src/main.c',
+  'src/arena.c',
+  'src/parser.c',
+  'src/ast/ast_interpreter.c',
   install : true)

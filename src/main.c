@@ -6,7 +6,7 @@
 #include <assert.h>
 
 #include "parser.h"
-#include "ast_interpreter.h"
+#include "ast/ast_interpreter.h"
 #include "arena.h"
 
 #define DEFAULT_HEAP_SIZE 4096

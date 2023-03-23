@@ -1,6 +1,6 @@
 #pragma once
 
-#include "parser.h"
+#include "../parser.h"
 
 #define MAX_ENVS 256
 #define MAX_VARS 256

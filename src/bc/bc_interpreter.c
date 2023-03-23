@@ -9,10 +9,63 @@
 
 #include "bc_interpreter.h"
 
+//we can have max 1024 * 16 ptrs to the heap
+#define MAX_OPERANDS (1024 * 16)
+#define MAX_FRAMES (1024 * 16)
+
+typedef struct {
+    void *ret_addr;
+    //ptrs to the heap
+    uint8_t **locals;
+    size_t locals_sz;
+} Frame;
+
+//struct for representing the inner state of the interpreter
+typedef struct {
+    //instruction pointer
+    void *ip;
+    Frame *frames;
+    size_t frames_sz;
+    //operands stack
+    uint8_t **operands;
+    size_t op_sz;
+} Bc_Interpreter;
+
+//GLOBAL VARIABLES
 void *const_pool = NULL;
 void **const_pool_map = NULL;
 Bc_Globals globals;
 uint16_t entry_point = 0;
+Bc_Interpreter interpreter;
+
+void bc_init() {
+    interpreter.ip = const_pool_map[entry_point];
+    interpreter.frames = malloc(sizeof(Frame) * MAX_FRAMES);
+    //we have 1 frame at the beginning for global frame
+    interpreter.frames_sz = 1;
+    interpreter.operands = malloc(sizeof(void *) * MAX_OPERANDS);
+    interpreter.op_sz = 0;
+}
+
+void bc_free() {
+    free(interpreter.frames);
+    free(interpreter.operands);
+}
+
+uint8_t *get_local_var(uint16_t index) {
+    assert(index < interpreter.frames->locals_sz);
+    return interpreter.frames->locals[index];
+}
+
+void set_local_var(uint16_t index, uint8_t *value) {
+    assert(index < interpreter.frames->locals_sz);
+    interpreter.frames->locals[index] = value;
+}
+
+void bc_interpret() {
+    
+
+}
 
 void deserialize(const char* filename) {
     FILE* file = fopen(filename, "rb");

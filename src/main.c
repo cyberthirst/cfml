@@ -7,6 +7,7 @@
 
 #include "parser.h"
 #include "ast/ast_interpreter.h"
+#include "bc/bc_interpreter.h"
 #include "arena.h"
 
 #define DEFAULT_HEAP_SIZE 4096
@@ -131,6 +132,7 @@ int main(int argc, char *argv[]) {
         }
         case ACTION_BC_INTERPRET: {
             printf("Running the bc_interpreter on source file %s\n", source_file);
+            deserialize(source_file);
             break;
         }
         default:

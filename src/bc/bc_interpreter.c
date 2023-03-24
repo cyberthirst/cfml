@@ -119,16 +119,23 @@ void exec_drop() {
     pop_operand();
 }
 
-void init_function_call(Bc_Func *fun, uint8_t argc) {
-    //allocate the array for locals & args
-    assert(itp->op_sz >= fun->params - 1);
-    assert(argc + 1 == fun->params);
-    itp->frames[itp->frames_sz].locals = malloc(fun->params + fun->locals);
+void init_function_call(uint8_t argc) {
+    //we will atleast pop argc args + 1 for the function
+    assert(itp->op_sz > argc);
+    //itp->frames[itp->frames_sz].locals = malloc(fun->params + fun->locals);
+    itp->frames[itp->frames_sz].locals = malloc(sizeof (uint8_t *)*(argc + 1));
     //set the args
     itp->frames[itp->frames_sz].locals[0] = global_null;
     for (int i = argc; i > 0; --i) {
         itp->frames[itp->frames_sz].locals[i] = pop_operand();
     }
+    Bc_Func *fun = (Bc_Func *)pop_operand();
+    assert(fun->kind == VK_FUNCTION);
+    //TODO: we can read the function from the stack beforehand and prevent realloc
+    //doing this because it's simple :)
+    itp->frames[itp->frames_sz].locals = realloc(itp->frames[itp->frames_sz].locals,
+                                                sizeof(uint8_t *)*(fun->params + fun->locals));
+    assert(argc + 1 == fun->params);
     //set the rest of the locals to null
     for (int i = argc + 1; i < fun->params + fun->locals; ++i) {
         itp->frames[itp->frames_sz].locals[i] = global_null;
@@ -247,18 +254,21 @@ void exec_print() {
 void exec_return() {
     assert(itp->frames_sz > 0);
     itp->ip = itp->frames[--itp->frames_sz].ret_addr;
+    free(itp->frames[itp->frames_sz].locals);
 }
 
 void exec_get_local() {
     uint16_t index = *(uint16_t *)itp->ip;
     itp->ip += 2;
-    push_operand(itp->frames->locals[index]);
+    //printf("get local: \n");
+    //print_val((Value)itp->frames[itp->frames_sz - 1].locals[index]);
+    push_operand(itp->frames[itp->frames_sz - 1].locals[index]);
 }
 
 void exec_set_local() {
     uint16_t index = *(uint16_t *)itp->ip;
     itp->ip += 2;
-    itp->frames->locals[index] = peek_operand();
+    itp->frames[itp->frames_sz - 1].locals[index] = peek_operand();
 }
 
 void exec_set_global() {
@@ -295,9 +305,9 @@ void exec_branch() {
 void exec_call_function() {
     uint8_t argc = *(uint8_t *)itp->ip;
     itp->ip += 1;
-    Bc_Func *fun= (Bc_Func *)pop_operand();
-    assert(fun->kind == VK_FUNCTION);
-    init_function_call(fun, argc);
+    //Bc_Func *fun= (Bc_Func *)pop_operand();
+    //assert(fun->kind == VK_FUNCTION);
+    init_function_call(argc);
 }
 
 void bytecode_loop(){
@@ -366,7 +376,8 @@ void bc_interpret() {
     bc_init();
     //TODO initialize the global function
     Bc_Func *entry_point = itp->ip;
-    init_function_call(entry_point, 0);
+    push_operand(construct_bc_function(entry_point, heap));
+    init_function_call(0);
     bytecode_loop();
     bc_free();
 }

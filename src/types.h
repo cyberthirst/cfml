@@ -86,5 +86,6 @@ typedef struct {
 
 typedef struct {
     uint16_t count;
-    uint16_t *indices;
+    uint16_t *indexes;
+    uint8_t **values;
 } Bc_Globals;

@@ -34,7 +34,7 @@ typedef enum {
 } Instruction;
 
 typedef struct {
-    void *ret_addr;
+    uint8_t *ret_addr;
     //ptrs to the heap
     uint8_t **locals;
     size_t locals_sz;
@@ -55,6 +55,8 @@ typedef struct {
 //GLOBAL VARIABLES
 void *const_pool = NULL;
 uint8_t **const_pool_map = NULL;
+//number of constants in the const pool
+uint16_t const_pool_count = 0;
 Bc_Globals globals;
 uint16_t entry_point = 0;
 Bc_Interpreter *itp;
@@ -74,22 +76,14 @@ void bc_init() {
     heap->heap_free = heap->heap_start;
     heap->heap_size = 0;
     global_null = construct_null(heap);
+    //array that acts like a hash map - we just allocate as big array as there are constants
+    globals.values = malloc(sizeof(void *) * const_pool_count);
 }
 
 void bc_free() {
     free(itp->frames);
     free(itp->operands);
     free(itp);
-}
-
-uint8_t *get_local_var(uint16_t index) {
-    assert(index < itp->frames->locals_sz);
-    return itp->frames->locals[index];
-}
-
-void set_local_var(uint16_t index, uint8_t *value) {
-    assert(index < itp->frames->locals_sz);
-    itp->frames->locals[index] = value;
 }
 
 uint8_t *pop_operand() {
@@ -107,6 +101,16 @@ void push_operand(uint8_t *value) {
     itp->operands[itp->op_sz++] = value;
 }
 
+bool index_is_global(uint16_t index) {
+    assert(*const_pool_map[index] == VK_STRING);
+    for (int i = 0; i < globals.count; ++i) {
+        if (globals.indexes[i] == index) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void exec_drop() {
     //assert that there is something to be dropped
     assert(itp->op_sz > 0);
@@ -115,22 +119,25 @@ void exec_drop() {
     pop_operand();
 }
 
-void init_function_call(Bc_Func *fun) {
+void init_function_call(Bc_Func *fun, uint8_t argc) {
     //allocate the array for locals & args
     assert(itp->op_sz >= fun->params - 1);
+    assert(argc + 1 == fun->params);
     itp->frames[itp->frames_sz].locals = malloc(fun->params + fun->locals);
     //set the args
     itp->frames[itp->frames_sz].locals[0] = global_null;
-    for (int i = fun->params - 1; i > 0; --i) {
-        itp->frames[itp->frames_sz].locals[i] = itp->operands[itp->op_sz--];
+    for (int i = argc; i > 0; --i) {
+        itp->frames[itp->frames_sz].locals[i] = pop_operand();
     }
     //set the rest of the locals to null
-    for (int i = fun->params; i < fun->params + fun->locals; ++i) {
+    for (int i = argc + 1; i < fun->params + fun->locals; ++i) {
         itp->frames[itp->frames_sz].locals[i] = global_null;
     }
     //set the return address
-    itp->frames->ret_addr = ++itp->ip;
+    itp->frames[itp->frames_sz].ret_addr = itp->ip;
     itp->frames_sz++;
+    uint8_t *tmp_ip = itp->ip;
+    itp->ip = fun->bytecode;
 }
 
 void exec_constant() {
@@ -238,8 +245,59 @@ void exec_print() {
 }
 
 void exec_return() {
-    itp->ip = itp->frames->ret_addr;
-    itp->frames_sz--;
+    assert(itp->frames_sz > 0);
+    itp->ip = itp->frames[--itp->frames_sz].ret_addr;
+}
+
+void exec_get_local() {
+    uint16_t index = *(uint16_t *)itp->ip;
+    itp->ip += 2;
+    push_operand(itp->frames->locals[index]);
+}
+
+void exec_set_local() {
+    uint16_t index = *(uint16_t *)itp->ip;
+    itp->ip += 2;
+    itp->frames->locals[index] = peek_operand();
+}
+
+void exec_set_global() {
+    uint16_t index = *(uint16_t *)itp->ip;
+    assert(index_is_global(index));
+    itp->ip += 2;
+    globals.values[index] = peek_operand();
+}
+
+void exec_get_global() {
+    uint16_t index = *(uint16_t *)itp->ip;
+    assert(index_is_global(index));
+    itp->ip += 2;
+    push_operand(globals.values[index]);
+}
+
+void exec_jump() {
+    int16_t offset = *(int16_t *)itp->ip;
+    itp->ip += 2;
+    //TODO is it ok to add int16_t to uint8_t*?
+    itp->ip += offset;
+}
+
+void exec_branch() {
+    int16_t offset = *(int16_t *)itp->ip;
+    itp->ip += 2;
+    Boolean *boolean = (Boolean *)pop_operand();
+    assert(boolean->kind == VK_BOOLEAN);
+    if (boolean->val) {
+        itp->ip += offset;
+    }
+}
+
+void exec_call_function() {
+    uint8_t argc = *(uint8_t *)itp->ip;
+    itp->ip += 1;
+    Bc_Func *fun= (Bc_Func *)pop_operand();
+    assert(fun->kind == VK_FUNCTION);
+    init_function_call(fun, argc);
 }
 
 void bytecode_loop(){
@@ -273,25 +331,25 @@ void bytecode_loop(){
                 // Implement CALL_METHOD logic here
                 break;
             case CALL_FUNCTION:
-                // Implement CALL_FUNCTION logic here
+                exec_call_function();
                 break;
             case SET_LOCAL:
-                // Implement SET_LOCAL logic here
+                exec_set_local();
                 break;
             case GET_LOCAL:
-                // Implement GET_LOCAL logic here
+                exec_get_local();
                 break;
             case SET_GLOBAL:
-                // Implement SET_GLOBAL logic here
+                exec_set_global();
                 break;
             case GET_GLOBAL:
-                // Implement GET_GLOBAL logic here
+                exec_get_global();
                 break;
             case BRANCH:
-                // Implement BRANCH logic here
+                exec_branch();
                 break;
             case JUMP:
-                // Implement JUMP logic here
+                exec_jump();
                 break;
             case RETURN:
                 exec_return();
@@ -308,8 +366,7 @@ void bc_interpret() {
     bc_init();
     //TODO initialize the global function
     Bc_Func *entry_point = itp->ip;
-    init_function_call(entry_point);
-    itp->ip = entry_point->bytecode;
+    init_function_call(entry_point, 0);
     bytecode_loop();
     bc_free();
 }
@@ -332,12 +389,12 @@ void deserialize(const char* filename) {
     }
 
     // Read how many objs are in the const pool
-    uint16_t const_pool_count;
     fread(&const_pool_count, sizeof(uint16_t), 1, file);
 
     // Allocate the const pool
     // The pool has constant size, we don't initially know how big the objs actually are
     // If the pool is full we have to exit(1)
+    //TODO implement the checks on cp size
     const_pool = malloc(CONST_POOL_SZ);
 
     const_pool_map  = malloc(sizeof(void*) * const_pool_count);
@@ -413,8 +470,8 @@ void deserialize(const char* filename) {
 
     // Read the globals
     fread(&globals.count, sizeof(uint16_t), 1, file);
-    globals.indices = malloc(sizeof(uint16_t) * globals.count);
-    fread(globals.indices, sizeof(uint16_t), globals.count, file);
+    globals.indexes = malloc(sizeof(uint16_t) * globals.count);
+    fread(globals.indexes, sizeof(uint16_t), globals.count, file);
 
     // Read the entry point
     fread(&entry_point, sizeof(uint16_t), 1, file);

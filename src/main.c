@@ -131,8 +131,9 @@ int main(int argc, char *argv[]) {
             break;
         }
         case ACTION_BC_INTERPRET: {
-            printf("Running the bc_interpreter on source file %s\n", source_file);
+            //printf("Running the bc_interpreter on source file %s\n", source_file);
             deserialize(source_file);
+            bc_interpret();
             break;
         }
         default:

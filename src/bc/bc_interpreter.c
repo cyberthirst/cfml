@@ -137,7 +137,7 @@ void exec_constant() {
     uint16_t index;
     index = *(uint16_t *) itp->ip;
     Bc_Interpreter *tmp_itp = itp;
-    print_heap(heap);
+    //print_heap(heap);
     switch (*const_pool_map[index]) {
         case VK_INTEGER: {
             Integer *integer = const_pool_map[index];
@@ -152,6 +152,13 @@ void exec_constant() {
             assert(null->kind == VK_NULL);
             null = global_null;
             push_operand((uint8_t *)null);
+            break;
+        }
+        case VK_BOOLEAN: {
+            Boolean *boolean = const_pool_map[index];
+            assert(boolean->kind == VK_BOOLEAN);
+            boolean = (Boolean *) construct_boolean(boolean->val, heap);
+            push_operand((uint8_t *)boolean);
             break;
         }
         case VK_STRING: {
@@ -172,7 +179,7 @@ void exec_constant() {
             exit(1);
         }
     }
-    print_heap(heap);
+    //print_heap(heap);
     itp->ip += 2;
 }
 
@@ -186,10 +193,11 @@ void exec_print() {
     itp->ip += 1;
     Bc_String *prnt = const_pool_map[index];
     assert(prnt->kind == VK_STRING);
+    char *tmp = prnt->value;
 
     Value val[num_args];
     for (int i = num_args - 1; i >= 0; --i) {
-        val[i] = *(Value *)pop_operand();
+        val[i] = (Value)pop_operand();
     }
     size_t tilda = 0;
     for (size_t i = 0; i < prnt->len; i++) {
@@ -368,7 +376,8 @@ void deserialize(const char* filename) {
                 Bc_String *string = (Bc_String  *)const_pool_map[i];
                 string->kind = tag;
                 fread(&string->len, sizeof(uint32_t), 1, file);
-                string->value = (char *)(string + sizeof(uint32_t));
+                //string + sizefof(uint32_t) + 1 is the address where value should start
+                //string->value = (char *)((uint8_t *)string + sizeof(uint32_t) + 1);
                 fread(string->value, sizeof(char), string->len, file);
                 string->value[string->len] = '\0';
                 const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_String) + string->len;
@@ -380,7 +389,7 @@ void deserialize(const char* filename) {
                 fread(&function->params, sizeof(uint8_t), 1, file);
                 fread(&function->locals, sizeof(uint16_t), 1, file);
                 fread(&function->len, sizeof(uint32_t), 1, file);
-                function->bytecode = (uint8_t *)(function + sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint32_t));
+                //function->bytecode = (uint8_t *)(function + sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint32_t));
                 fread(function->bytecode, sizeof(uint8_t), function->len, file);
                 const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_Func) + function->len;
                 break;
@@ -389,7 +398,7 @@ void deserialize(const char* filename) {
                 Bc_Class *class = (Bc_Class *)const_pool_map[i];
                 class->kind = tag;
                 fread(&class->count, sizeof(uint16_t), 1, file);
-                class->members = (uint16_t *)(class + sizeof(uint16_t));
+                //class->members = (uint16_t *)(class + sizeof(uint16_t));
                 fread(class->members, sizeof(uint16_t), class->count, file);
                 const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_Class) + sizeof(uint16_t) * class->count;
                 break;

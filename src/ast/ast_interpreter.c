@@ -50,7 +50,7 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
 	size_t method_name_len = m_name.len;
 	#define METHOD(name) \
 			if (sizeof(name) - 1 == method_name_len && memcmp(name, method_name, method_name_len) == 0) /* body*/
-    ValueKind kind = *(ValueKind *)obj;
+    uint8_t kind = *(uint8_t *)obj;
     if (kind == VK_INTEGER || kind == VK_BOOLEAN || kind == VK_NULL) { 
         assert(argc == 1);
         METHOD("+") {
@@ -472,7 +472,7 @@ Value interpret(Ast *ast, IState *state) {
             AstMethodCall *mc = (AstMethodCall *) ast;
             Object *obj = interpret(mc->object, state);
             assert(obj->kind == VK_OBJECT || is_primitive(obj->kind));
-            ValueKind vk = *(ValueKind *)obj;
+            uint8_t vk = *(uint8_t *)obj;
             Value *args = malloc(sizeof(Value) * mc->argument_cnt);
             Value val;
             for (size_t i = 0; i < mc->argument_cnt; i++) {

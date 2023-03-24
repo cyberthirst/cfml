@@ -15,7 +15,7 @@ typedef enum {
     VK_OBJECT,
 } ValueKind;
 
-typedef ValueKind *Value;
+typedef uint8_t *Value;
 
 /*typedef struct Array Array;
 typedef struct Object Object;
@@ -25,29 +25,29 @@ typedef struct Boolean Boolean;
 typedef struct Null Null;*/
 
 typedef struct {
-    ValueKind kind;
+    uint8_t kind;
     bool val;
 } Boolean;
 
 typedef struct {
-    ValueKind kind;
+    uint8_t kind;
     i32 val;
 }Integer;
 
 typedef struct {
-    ValueKind kind;
+    uint8_t kind;
     AstFunction *val;
-}Function ;
+}Function;
 
 typedef struct {
-    ValueKind kind;
-}Null ;
+    uint8_t kind;
+}Null;
 
 typedef struct {
-    ValueKind kind;
+    uint8_t kind;
     size_t size;
     Value val[];
-}Array ;
+}Array;
 
 typedef struct {
     Str name;
@@ -55,9 +55,36 @@ typedef struct {
 } Field;
 
 typedef struct {
-    ValueKind kind;
+    uint8_t kind;
     Value parent;
     size_t field_cnt;
     Field val[];
-}Object ;
+}Object;
 
+
+// BC INTERPRETER TYPES
+
+typedef struct {
+    uint8_t kind;
+    uint32_t len;
+    char value[];
+} Bc_String;
+
+typedef struct {
+    uint8_t kind;
+    uint8_t params;
+    uint16_t locals;
+    uint32_t len;
+    uint8_t bytecode[];
+} Bc_Func;
+
+typedef struct {
+    uint8_t kind;
+    uint16_t count;
+    uint16_t members[];
+} Bc_Class;
+
+typedef struct {
+    uint16_t count;
+    uint16_t *indices;
+} Bc_Globals;

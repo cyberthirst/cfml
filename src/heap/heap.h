@@ -21,6 +21,8 @@ typedef struct {
     size_t heap_size;
 } Heap;
 
+void print_heap(Heap *heap);
+
 void *heap_alloc(size_t sz, Heap *heap);
 
 
@@ -51,6 +53,10 @@ Null *null_alloc(Heap *heap);
 
 //TODO don't construct null, just set the Value ptr to NULL
 Value construct_null(Heap *heap);
+
+Value construct_bc_string(Bc_String *str, Heap *heap);
+
+Value construct_bc_function(Bc_Func *func, Heap *heap);
 
 //BYTECODE HEAP ALLOCS
 

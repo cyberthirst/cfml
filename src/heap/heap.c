@@ -7,7 +7,7 @@
 
 
 void *heap_alloc(size_t sz, Heap *heap) {
-    long long int tmp = MEM_SZ;
+    //printf("allocating %lld bytes\n", sz);
     if (heap->heap_size + sz > MEM_SZ) {
         printf("Heap is full, exiting.\n");
         printf("Max heap size is: %ld, and current heap size is: %ld\n", MEM_SZ, heap->heap_size);
@@ -29,6 +29,47 @@ void *heap_alloc(size_t sz, Heap *heap) {
         //printf("heap size is: %ld\n", heap->heap_size);
         return ptr;
     }
+}
+
+//TODO add printing of all types
+void print_heap(Heap *heap) {
+    printf("------------------------PRINTING HEAP------------------------\n");
+    uint8_t *ptr = heap->heap_start;
+    int cnt = 0;
+    while (ptr < heap->heap_free) {
+        printf("element %d: ", cnt++);
+        print_val(ptr);
+        printf("\n");
+        switch (*(Value)ptr) {
+            case VK_INTEGER: {
+                ptr += sizeof(Integer);
+                break;
+            }
+            case VK_BOOLEAN: {
+                ptr += sizeof(Boolean);
+                break;
+            }
+            case VK_NULL: {
+                ptr += sizeof(Null);
+                break;
+            }
+            case VK_STRING: {
+                Bc_String *str = (Bc_String *) ptr;
+                ptr += sizeof(Bc_String) + str->len;
+            }
+            case VK_FUNCTION: {
+                Bc_Func *func = (Bc_Func *) ptr;
+                ptr += sizeof(Bc_Func) + func->len;
+                break;
+            }
+        }
+        //align to 8 bytes
+        size_t diff = 8 - ((uintptr_t)ptr % 8);
+        if (diff != 8) {
+            ptr += diff;
+        }
+    }
+    printf("-------------------------END OF HEAP-------------------------\n");
 }
 
 Array *ast_array_alloc(int size, Heap *heap) {
@@ -103,6 +144,28 @@ Value construct_null(Heap *heap) {
     null->kind = VK_NULL;
     return null;
     //return state->null;
+}
+
+Bc_String *bc_string_alloc(uint32_t size, Heap *heap) {
+    return heap_alloc(sizeof(Bc_String) + sizeof(uint8_t) * size, heap);
+}
+
+//deep copy of the string to the heap
+Value construct_bc_string(Bc_String *str, Heap *heap) {
+    Bc_String *string = bc_string_alloc(str->len, heap);
+    memcpy(string, str, sizeof(Bc_String ) + str->len);
+    return string;
+}
+
+Bc_Func *bc_function_alloc(uint32_t size, Heap *heap) {
+    return heap_alloc(sizeof(Bc_Func) + sizeof(uint8_t) * size, heap);
+}
+
+//deep copy of the function to the heap
+Value construct_bc_function(Bc_Func *func, Heap *heap) {
+    Bc_Func *bc_func = bc_function_alloc(func->len, heap);
+    memcpy(bc_func, func, sizeof(Bc_Func) + func->len);
+    return bc_func;
 }
 
 //BYTECODE HEAP ALLOCS

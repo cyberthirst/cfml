@@ -46,7 +46,7 @@ typedef struct {
 } IState;
 
 
-//initializes the state of the interpreter
+//initializes the state of the itp
 IState* init_interpreter();
 
 void free_interpreter(IState *state);

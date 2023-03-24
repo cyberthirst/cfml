@@ -40,14 +40,15 @@ typedef struct {
     size_t locals_sz;
 } Frame;
 
-//struct for representing the inner state of the interpreter
+//struct for representing the inner state of the itp
 typedef struct {
     //instruction pointer
     uint8_t *ip;
     Frame *frames;
     size_t frames_sz;
     //operands stack
-    uint8_t **operands;
+    //ptrs to the heap
+    Value *operands;
     size_t op_sz;
 } Bc_Interpreter;
 
@@ -56,78 +57,187 @@ void *const_pool = NULL;
 uint8_t **const_pool_map = NULL;
 Bc_Globals globals;
 uint16_t entry_point = 0;
-Bc_Interpreter interpreter;
+Bc_Interpreter *itp;
+Heap *heap;
+Null *global_null;
 
 void bc_init() {
-    interpreter.ip = const_pool_map[entry_point];
-    interpreter.frames = malloc(sizeof(Frame) * MAX_FRAMES);
+    itp = malloc(sizeof(Bc_Interpreter));
+    itp->ip = const_pool_map[entry_point];
+    itp->frames = malloc(sizeof(Frame) * MAX_FRAMES);
     //we have 1 frame at the beginning for global frame
-    interpreter.frames_sz = 1;
-    interpreter.operands = malloc(sizeof(void *) * MAX_OPERANDS);
-    interpreter.op_sz = 0;
+    itp->frames_sz = 0;
+    itp->operands = malloc(sizeof(void *) * MAX_OPERANDS);
+    itp->op_sz = 0;
+    heap = malloc(sizeof(Heap));
+    heap->heap_start = malloc(MEM_SZ);
+    heap->heap_free = heap->heap_start;
+    heap->heap_size = 0;
+    global_null = construct_null(heap);
 }
 
 void bc_free() {
-    free(interpreter.frames);
-    free(interpreter.operands);
+    free(itp->frames);
+    free(itp->operands);
+    free(itp);
 }
 
 uint8_t *get_local_var(uint16_t index) {
-    assert(index < interpreter.frames->locals_sz);
-    return interpreter.frames->locals[index];
+    assert(index < itp->frames->locals_sz);
+    return itp->frames->locals[index];
 }
 
 void set_local_var(uint16_t index, uint8_t *value) {
-    assert(index < interpreter.frames->locals_sz);
-    interpreter.frames->locals[index] = value;
+    assert(index < itp->frames->locals_sz);
+    itp->frames->locals[index] = value;
+}
+
+uint8_t *pop_operand() {
+    assert(itp->op_sz > 0);
+    return itp->operands[--itp->op_sz];
+}
+
+uint8_t *peek_operand() {
+    assert(itp->op_sz > 0);
+    return itp->operands[itp->op_sz - 1];
+}
+
+void push_operand(uint8_t *value) {
+    assert(itp->op_sz < MAX_OPERANDS);
+    itp->operands[itp->op_sz++] = value;
 }
 
 void exec_drop() {
-    assert(interpreter.op_sz);
-    free(interpreter.operands[interpreter.op_sz--]);
-    --interpreter.op_sz;
+    //assert that there is something to be dropped
+    assert(itp->op_sz > 0);
+    //TODO should I free here?
+    //free(itp->operands[itp->op_sz--]);
+    pop_operand();
+}
+
+void init_function_call(Bc_Func *fun) {
+    //allocate the array for locals & args
+    assert(itp->op_sz >= fun->params - 1);
+    itp->frames[itp->frames_sz].locals = malloc(fun->params + fun->locals);
+    //set the args
+    itp->frames[itp->frames_sz].locals[0] = global_null;
+    for (int i = fun->params - 1; i > 0; --i) {
+        itp->frames[itp->frames_sz].locals[i] = itp->operands[itp->op_sz--];
+    }
+    //set the rest of the locals to null
+    for (int i = fun->params; i < fun->params + fun->locals; ++i) {
+        itp->frames[itp->frames_sz].locals[i] = global_null;
+    }
+    //set the return address
+    itp->frames->ret_addr = ++itp->ip;
+    itp->frames_sz++;
 }
 
 void exec_constant() {
     uint16_t index;
-    index = *(uint16_t *) interpreter.ip;
+    index = *(uint16_t *) itp->ip;
+    Bc_Interpreter *tmp_itp = itp;
+    print_heap(heap);
     switch (*const_pool_map[index]) {
         case VK_INTEGER: {
             Integer *integer = const_pool_map[index];
-            integer->kind = VK_INTEGER;
-            integer->val = ((Integer *) const_pool_map[index])->val;
-            interpreter.operands[++interpreter.op_sz] = (uint8_t *) integer;
+            assert(integer->kind == VK_INTEGER);
+            integer = (Integer *) construct_integer(integer->val, heap);
+            push_operand((uint8_t *)integer);
+            Integer *tmp = (Integer *)itp->operands[itp->op_sz - 1];
             break;
         }
         case VK_NULL: {
-            Null *null = malloc(sizeof(Null));
-            null->kind = VK_NULL;
-            interpreter.operands[++interpreter.op_sz] = (uint8_t *) null;
+            Null *null = const_pool_map[index];
+            assert(null->kind == VK_NULL);
+            null = global_null;
+            push_operand((uint8_t *)null);
             break;
         }
         case VK_STRING: {
-            Bc_String *string = malloc(sizeof(Bc_String));
-            string->kind = VK_STRING;
-            string->length = ((Bc_String *) const_pool_map[index])->length;
-            string->value = malloc(string->length);
-            //memcpy(string->value, ((Bc_String *) const_pool_map[index])->value, string->length);
-            interpreter.operands[++interpreter.op_sz] = (uint8_t *) string;
+            Bc_String *string = const_pool_map[index];
+            string = construct_bc_string(string, heap);
+            push_operand((uint8_t *)string);
             break;
         }
+
         case VK_FUNCTION: {
+            Bc_Func *function = const_pool_map[index];
+            function = construct_bc_function(function, heap);
+            push_operand((uint8_t *)function);
+            break;
         }
         default: {
             printf("Unknown constant type\n");
             exit(1);
         }
     }
+    print_heap(heap);
+    itp->ip += 2;
 }
 
+void exec_print() {
+    Bc_Interpreter *tmp_itp = itp;
+    //assert that there is index to the constant pool, where the format str is stored
+    //assert(itp.op_sz);
+    uint16_t index = *(uint16_t *) itp->ip;
+    itp->ip += 2;
+    uint8_t num_args = *(uint8_t *)itp->ip;
+    itp->ip += 1;
+    Bc_String *prnt = const_pool_map[index];
+    assert(prnt->kind == VK_STRING);
 
+    Value val[num_args];
+    for (int i = num_args - 1; i >= 0; --i) {
+        val[i] = *(Value *)pop_operand();
+    }
+    size_t tilda = 0;
+    for (size_t i = 0; i < prnt->len; i++) {
+        if (prnt->value[i] == '~') {
+            //we are only concerned with valid programs so each ~ will have a corresponding value
+            print_val(val[tilda]);
+            tilda++;
+        }
+        else {
+            char c = prnt->value[i];
+            //check for escape characters
+            if (c == '\\' && prnt->len > i + 1) {
+                char next = prnt->value[i + 1];
+                //increment i so we don't print the next character two times
+                i++;
+                if (next == 'n') {
+                    printf("\n");
+                }
+                else if (next == 't') {
+                    printf("\t");
+                }
+                else if (next == 'r') {
+                    printf("\r");
+                }
+                else if (next == '~') {
+                    printf("~");
+                }
+                else {
+                    printf("%c", next);
+                }
+            }
+            else {
+                printf("%c", prnt->value[i]);
+            }
+        }
+    }
+    push_operand((uint8_t *)global_null);
+}
 
-void bc_interpret() {
-    while (interpreter.frames_sz) {
-        switch (*interpreter.ip++) {
+void exec_return() {
+    itp->ip = itp->frames->ret_addr;
+    itp->frames_sz--;
+}
+
+void bytecode_loop(){
+    Bc_Interpreter *tmp_interpreter = itp;
+    while (itp->frames_sz) {
+        switch (*itp->ip++) {
             case DROP: {
                 exec_drop();
                 break;
@@ -137,7 +247,7 @@ void bc_interpret() {
                 break;
             }
             case PRINT:
-                // Implement PRINT logic here
+                exec_print();
                 break;
             case ARRAY:
                 // Implement ARRAY logic here
@@ -176,13 +286,24 @@ void bc_interpret() {
                 // Implement JUMP logic here
                 break;
             case RETURN:
-                // Implement RETURN logic here
+                exec_return();
                 break;
             default:
-                printf("Unknown instruction: 0x%02X\n", *interpreter.ip);
+                printf("Unknown instruction: 0x%02X\n", *itp->ip);
                 exit(1);
         }
     }
+}
+
+
+void bc_interpret() {
+    bc_init();
+    //TODO initialize the global function
+    Bc_Func *entry_point = itp->ip;
+    init_function_call(entry_point);
+    itp->ip = entry_point->bytecode;
+    bytecode_loop();
+    bc_free();
 }
 
 
@@ -226,6 +347,7 @@ void deserialize(const char* filename) {
                 Integer *integer = (Integer  *)const_pool_map[i];
                 integer->kind = tag;
                 fread(&integer->val, sizeof(int32_t), 1, file);
+                //we use ValueKind and not uint8_t as tag, thus we don't have jsut sizeof(Integer)
                 const_pool_map[i + 1] = const_pool_map[i] + sizeof(Integer);
                 break;
             }
@@ -245,22 +367,22 @@ void deserialize(const char* filename) {
             case VK_STRING: {
                 Bc_String *string = (Bc_String  *)const_pool_map[i];
                 string->kind = tag;
-                fread(&string->length, sizeof(uint32_t), 1, file);
+                fread(&string->len, sizeof(uint32_t), 1, file);
                 string->value = (char *)(string + sizeof(uint32_t));
-                fread(string->value, sizeof(char), string->length, file);
-                string->value[string->length] = '\0';
-                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_String) + string->length;
+                fread(string->value, sizeof(char), string->len, file);
+                string->value[string->len] = '\0';
+                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_String) + string->len;
                 break;
             }
             case VK_FUNCTION: {
-                Bc_Function *function = (Bc_Function  *)const_pool_map[i];
+                Bc_Func *function = (Bc_Func  *)const_pool_map[i];
                 function->kind = tag;
                 fread(&function->params, sizeof(uint8_t), 1, file);
                 fread(&function->locals, sizeof(uint16_t), 1, file);
-                fread(&function->length, sizeof(uint32_t), 1, file);
+                fread(&function->len, sizeof(uint32_t), 1, file);
                 function->bytecode = (uint8_t *)(function + sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint32_t));
-                fread(function->bytecode, sizeof(uint8_t), function->length, file);
-                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_Function) + function->length;
+                fread(function->bytecode, sizeof(uint8_t), function->len, file);
+                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_Func) + function->len;
                 break;
             }
             case VK_CLASS: {

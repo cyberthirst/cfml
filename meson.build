@@ -7,4 +7,6 @@ exe = executable('fml',
   'src/arena.c',
   'src/parser.c',
   'src/ast/ast_interpreter.c',
+  'src/heap/heap.c',
+  'src/bc/bc_interpreter.c',
   install : true)

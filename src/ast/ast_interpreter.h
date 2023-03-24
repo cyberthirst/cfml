@@ -1,65 +1,15 @@
 #pragma once
 
 #include "../parser.h"
+#include "../heap/heap.h"
+#include "../types.h"
 
 #define MAX_ENVS 256
 #define MAX_VARS 256
 #define MAX_SCOPES 256
 #define MAX_VAR_NAME_LEN 64
-//#define MEM_SZ (1024LL * 1024 * 1024 * 2)
-extern const long long int MEM_SZ;
 
 #define GLOBAL_ENV_INDEX 0
-
-typedef enum {
-	VK_NULL,
-	VK_BOOLEAN,
-	VK_INTEGER,
-	VK_ARRAY,
-	VK_FUNCTION,
-    VK_OBJECT,
-} ValueKind;
-
-typedef struct Array Array;
-typedef struct Object Object;
-typedef ValueKind * Value;
-
-typedef struct {
-    ValueKind kind;
-    bool val;
-} Boolean;
-
-typedef struct {
-    ValueKind kind;
-    i32 val;
-} Integer;
-
-typedef struct {
-    ValueKind kind;
-    AstFunction *val;
-} Function;
-
-typedef struct {
-    ValueKind kind;
-} Null;
-
-struct Array {
-    ValueKind kind;
-    size_t size;
-    Value val[];
-};
-
-typedef struct {
-	Str name;
-	Value val;
-} Field;
-
-struct Object {
-    ValueKind kind;
-    Value parent;
-    size_t field_cnt;
-    Field val[];
-};
 
 typedef struct {
     Str name;
@@ -80,12 +30,6 @@ typedef struct {
      size_t scope_cnt;
      Value ret_val;
 } Environment;
-
-typedef struct {
-    uint8_t *heap_start;
-    uint8_t *heap_free;
-    size_t heap_size;
-} Heap;
 
 typedef struct {
     //ptr to the heap where we store the vars

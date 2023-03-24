@@ -8,10 +8,30 @@
 #include <assert.h>
 
 #include "bc_interpreter.h"
+#include "../heap/heap.h"
 
 //we can have max 1024 * 16 ptrs to the heap
 #define MAX_OPERANDS (1024 * 16)
 #define MAX_FRAMES (1024 * 16)
+
+typedef enum {
+    DROP = 0x00,
+    CONSTANT = 0x01,
+    PRINT = 0x02,
+    ARRAY = 0x03,
+    OBJECT = 0x04,
+    GET_FIELD = 0x05,
+    SET_FIELD = 0x06,
+    CALL_METHOD = 0x07,
+    CALL_FUNCTION = 0x08,
+    SET_LOCAL = 0x09,
+    GET_LOCAL = 0x0A,
+    SET_GLOBAL = 0x0B,
+    GET_GLOBAL = 0x0C,
+    BRANCH = 0x0D,
+    JUMP = 0x0E,
+    RETURN = 0x0F,
+} Instruction;
 
 typedef struct {
     void *ret_addr;
@@ -23,7 +43,7 @@ typedef struct {
 //struct for representing the inner state of the interpreter
 typedef struct {
     //instruction pointer
-    void *ip;
+    uint8_t *ip;
     Frame *frames;
     size_t frames_sz;
     //operands stack
@@ -33,7 +53,7 @@ typedef struct {
 
 //GLOBAL VARIABLES
 void *const_pool = NULL;
-void **const_pool_map = NULL;
+uint8_t **const_pool_map = NULL;
 Bc_Globals globals;
 uint16_t entry_point = 0;
 Bc_Interpreter interpreter;
@@ -62,10 +82,109 @@ void set_local_var(uint16_t index, uint8_t *value) {
     interpreter.frames->locals[index] = value;
 }
 
-void bc_interpret() {
-    
-
+void exec_drop() {
+    assert(interpreter.op_sz);
+    free(interpreter.operands[interpreter.op_sz--]);
+    --interpreter.op_sz;
 }
+
+void exec_constant() {
+    uint16_t index;
+    index = *(uint16_t *) interpreter.ip;
+    switch (*const_pool_map[index]) {
+        case VK_INTEGER: {
+            Integer *integer = const_pool_map[index];
+            integer->kind = VK_INTEGER;
+            integer->val = ((Integer *) const_pool_map[index])->val;
+            interpreter.operands[++interpreter.op_sz] = (uint8_t *) integer;
+            break;
+        }
+        case VK_NULL: {
+            Null *null = malloc(sizeof(Null));
+            null->kind = VK_NULL;
+            interpreter.operands[++interpreter.op_sz] = (uint8_t *) null;
+            break;
+        }
+        case VK_STRING: {
+            Bc_String *string = malloc(sizeof(Bc_String));
+            string->kind = VK_STRING;
+            string->length = ((Bc_String *) const_pool_map[index])->length;
+            string->value = malloc(string->length);
+            //memcpy(string->value, ((Bc_String *) const_pool_map[index])->value, string->length);
+            interpreter.operands[++interpreter.op_sz] = (uint8_t *) string;
+            break;
+        }
+        case VK_FUNCTION: {
+        }
+        default: {
+            printf("Unknown constant type\n");
+            exit(1);
+        }
+    }
+}
+
+
+
+void bc_interpret() {
+    while (interpreter.frames_sz) {
+        switch (*interpreter.ip++) {
+            case DROP: {
+                exec_drop();
+                break;
+            }
+            case CONSTANT: {
+                exec_constant();
+                break;
+            }
+            case PRINT:
+                // Implement PRINT logic here
+                break;
+            case ARRAY:
+                // Implement ARRAY logic here
+                break;
+            case OBJECT:
+                // Implement OBJECT logic here
+                break;
+            case GET_FIELD:
+                // Implement GET_FIELD logic here
+                break;
+            case SET_FIELD:
+                // Implement SET_FIELD logic here
+                break;
+            case CALL_METHOD:
+                // Implement CALL_METHOD logic here
+                break;
+            case CALL_FUNCTION:
+                // Implement CALL_FUNCTION logic here
+                break;
+            case SET_LOCAL:
+                // Implement SET_LOCAL logic here
+                break;
+            case GET_LOCAL:
+                // Implement GET_LOCAL logic here
+                break;
+            case SET_GLOBAL:
+                // Implement SET_GLOBAL logic here
+                break;
+            case GET_GLOBAL:
+                // Implement GET_GLOBAL logic here
+                break;
+            case BRANCH:
+                // Implement BRANCH logic here
+                break;
+            case JUMP:
+                // Implement JUMP logic here
+                break;
+            case RETURN:
+                // Implement RETURN logic here
+                break;
+            default:
+                printf("Unknown instruction: 0x%02X\n", *interpreter.ip);
+                exit(1);
+        }
+    }
+}
+
 
 void deserialize(const char* filename) {
     FILE* file = fopen(filename, "rb");
@@ -103,29 +222,29 @@ void deserialize(const char* filename) {
         fread(&tag, sizeof(uint8_t), 1, file);
 
         switch (tag) {
-            case INTEGER_TAG: {
-                Bc_Integer *integer = (Bc_Integer  *)const_pool_map[i];
-                integer->tag = tag;
-                fread(&integer->value, sizeof(int32_t), 1, file);
-                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_Integer);
+            case VK_INTEGER: {
+                Integer *integer = (Integer  *)const_pool_map[i];
+                integer->kind = tag;
+                fread(&integer->val, sizeof(int32_t), 1, file);
+                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Integer);
                 break;
             }
-            case BOOLEAN_TAG: {
-                Bc_Boolean *boolean = (Bc_Boolean  *)const_pool_map[i];
-                boolean->tag = tag;
-                fread(&boolean->value, sizeof(uint8_t), 1, file);
-                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_Boolean);
+            case VK_BOOLEAN: {
+                Boolean *boolean = (Boolean  *)const_pool_map[i];
+                boolean->kind = tag;
+                fread(&boolean->val, sizeof(uint8_t), 1, file);
+                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Boolean);
                 break;
             }
-            case NULL_TAG: {
-                Bc_Null *null = (Bc_Null  *)const_pool_map[i];
-                null->tag = tag;
-                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_Null);
+            case VK_NULL: {
+                Null *null = (Null  *)const_pool_map[i];
+                null->kind = tag;
+                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Null);
                 break;
             }
-            case STRING_TAG: {
+            case VK_STRING: {
                 Bc_String *string = (Bc_String  *)const_pool_map[i];
-                string->tag = tag;
+                string->kind = tag;
                 fread(&string->length, sizeof(uint32_t), 1, file);
                 string->value = (char *)(string + sizeof(uint32_t));
                 fread(string->value, sizeof(char), string->length, file);
@@ -133,9 +252,9 @@ void deserialize(const char* filename) {
                 const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_String) + string->length;
                 break;
             }
-            case FUNCTION_TAG: {
+            case VK_FUNCTION: {
                 Bc_Function *function = (Bc_Function  *)const_pool_map[i];
-                function->tag = tag;
+                function->kind = tag;
                 fread(&function->params, sizeof(uint8_t), 1, file);
                 fread(&function->locals, sizeof(uint16_t), 1, file);
                 fread(&function->length, sizeof(uint32_t), 1, file);
@@ -144,9 +263,9 @@ void deserialize(const char* filename) {
                 const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_Function) + function->length;
                 break;
             }
-            case CLASS_TAG: {
+            case VK_CLASS: {
                 Bc_Class *class = (Bc_Class *)const_pool_map[i];
-                class->tag = tag;
+                class->kind = tag;
                 fread(&class->count, sizeof(uint16_t), 1, file);
                 class->members = (uint16_t *)(class + sizeof(uint16_t));
                 fread(class->members, sizeof(uint16_t), class->count, file);
@@ -154,7 +273,7 @@ void deserialize(const char* filename) {
                 break;
             }
             default: {
-                printf("Error: Invalid tag\n");
+                printf("Error: Invalid kind\n");
                 fclose(file);
                 exit(1);
             }

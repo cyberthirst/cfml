@@ -5,6 +5,8 @@
 #include "../heap/heap.h"
 #include "../parser.h"
 
+const long long int MEM_SZ = (1024L * 1024 * 1024 * 1);
+
 IState* init_interpreter() {
     IState *state = malloc(sizeof(IState));
     state->heap = malloc(sizeof(Heap));
@@ -13,7 +15,7 @@ IState* init_interpreter() {
     state->heap->heap_size = 0;
     state->envs = malloc(sizeof(Environment) * MAX_ENVS);
     state->current_env = 0;
-    state->null = construct_null(state);
+    state->null = construct_null(state->heap);
     return state;
 }
 
@@ -51,63 +53,63 @@ Value builtins(Value obj, int argc, Value *argv, Str m_name, IState *state) {
     if (kind == VK_INTEGER || kind == VK_BOOLEAN || kind == VK_NULL) { 
         assert(argc == 1);
         METHOD("+") {
-            return construct_integer(((Integer *)obj)->val + ((Integer *)argv[0])->val, state);
+            return construct_integer(((Integer *)obj)->val + ((Integer *)argv[0])->val, state->heap);
         }
         METHOD("-") {
-            return construct_integer(((Integer *)obj)->val - ((Integer *)argv[0])->val, state);
+            return construct_integer(((Integer *)obj)->val - ((Integer *)argv[0])->val, state->heap);
         }
         METHOD("*") { 
-            return construct_integer(((Integer *)obj)->val * ((Integer *)argv[0])->val, state);
+            return construct_integer(((Integer *)obj)->val * ((Integer *)argv[0])->val, state->heap);
         }
         METHOD("/") {
-            return construct_integer(((Integer *)obj)->val / ((Integer *)argv[0])->val, state);
+            return construct_integer(((Integer *)obj)->val / ((Integer *)argv[0])->val, state->heap);
         }
         METHOD("%") {
-            return construct_integer(((Integer *)obj)->val % ((Integer *)argv[0])->val, state);
+            return construct_integer(((Integer *)obj)->val % ((Integer *)argv[0])->val, state->heap);
         }
         METHOD("<=") {
-            return construct_boolean(((Integer *)obj)->val <= ((Integer *)argv[0])->val, state);
+            return construct_boolean(((Integer *)obj)->val <= ((Integer *)argv[0])->val, state->heap);
         }
         METHOD(">=") {
-            return construct_boolean(((Integer *)obj)->val >= ((Integer *)argv[0])->val, state);
+            return construct_boolean(((Integer *)obj)->val >= ((Integer *)argv[0])->val, state->heap);
         }
         METHOD(">") {
-            return construct_boolean(((Integer *)obj)->val > ((Integer *)argv[0])->val, state);
+            return construct_boolean(((Integer *)obj)->val > ((Integer *)argv[0])->val, state->heap);
         }
         METHOD("<") {
-            return construct_boolean(((Integer *)obj)->val < ((Integer *)argv[0])->val, state);
+            return construct_boolean(((Integer *)obj)->val < ((Integer *)argv[0])->val, state->heap );
         }
         METHOD("==") {
             if (kind == VK_INTEGER && *argv[0] != VK_INTEGER){
-                return construct_boolean(false, state);
+                return construct_boolean(false, state->heap);
             }
             else if (kind == VK_INTEGER)
-                return construct_boolean(((Integer *)obj)->val == ((Integer *)argv[0])->val, state);
+                return construct_boolean(((Integer *)obj)->val == ((Integer *)argv[0])->val, state->heap);
             else if (kind == VK_NULL)
-                return construct_boolean(*argv[0] == VK_NULL, state);
+                return construct_boolean(*argv[0] == VK_NULL, state->heap);
             else
-                return construct_boolean(((Boolean *)obj)->val == ((Boolean *)argv[0])->val, state);
+                return construct_boolean(((Boolean *)obj)->val == ((Boolean *)argv[0])->val, state->heap);
         }
         METHOD("!=") {
             if (kind == VK_INTEGER && *argv[0] != VK_INTEGER){
-                return construct_boolean(true, state);
+                return construct_boolean(true, state->heap);
             }
             else if (kind == VK_INTEGER)
-                return construct_boolean(((Integer *)obj)->val != ((Integer *)argv[0])->val, state);
+                return construct_boolean(((Integer *)obj)->val != ((Integer *)argv[0])->val, state->heap);
             else if (kind == VK_NULL){
-                return construct_boolean(*argv[0] != VK_NULL, state);
+                return construct_boolean(*argv[0] != VK_NULL, state->heap);
             }
             else
-                return construct_boolean(((Boolean *)obj)->val != ((Boolean *)argv[0])->val, state);
+                return construct_boolean(((Boolean *)obj)->val != ((Boolean *)argv[0])->val, state->heap);
         }
     }
     if (kind == VK_BOOLEAN) {
         assert(argc == 1);
         METHOD("&") {
-            return construct_boolean(((Boolean *)obj)->val & ((Boolean *)argv[0])->val, state);
+            return construct_boolean(((Boolean *)obj)->val & ((Boolean *)argv[0])->val, state->heap);
         }
         METHOD("|") {
-            return construct_boolean(((Boolean *)obj)->val | ((Boolean *)argv[0])->val, state);
+            return construct_boolean(((Boolean *)obj)->val | ((Boolean *)argv[0])->val, state->heap);
         }
     }
 
@@ -306,14 +308,14 @@ Value interpret(Ast *ast, IState *state) {
     switch(ast->kind) {
         case AST_INTEGER: {
             AstInteger *integer = (AstInteger *) ast;
-            return construct_integer(integer->value, state);
+            return construct_integer(integer->value, state->heap);
         }
         case AST_BOOLEAN: {
             AstBoolean *boolean = (AstBoolean *) ast; 
-            return construct_boolean(boolean->value, state);
+            return construct_boolean(boolean->value, state->heap);
         }
         case AST_NULL: {
-            return construct_null(state);
+            return construct_null(state->heap);
         }
         case AST_DEFINITION: {
             AstDefinition *definition = (AstDefinition *) ast; 
@@ -325,9 +327,9 @@ Value interpret(Ast *ast, IState *state) {
             AstVariableAccess *variable_access = (AstVariableAccess *) ast; 
             Value *val = get_var_ptr(variable_access->name, state);
             if (val == NULL){
-                Value nl = construct_null(state);
+                Value nl = construct_null(state->heap);
                 add_to_scope(nl, variable_access->name, state);
-                return construct_null(state);
+                return construct_null(state->heap);
             }
             return *val;
         }
@@ -344,7 +346,7 @@ Value interpret(Ast *ast, IState *state) {
         }
         case AST_FUNCTION: {
             AstFunction *function = (AstFunction *) ast;
-            return construct_function(function, state);
+            return construct_ast_function(function, state->heap);
         }
         case AST_FUNCTION_CALL: {
             AstFunctionCall *fc = (AstFunctionCall *) ast; 
@@ -354,7 +356,7 @@ Value interpret(Ast *ast, IState *state) {
                 args[i] = interpret(fc->arguments[i], state);
             }
             push_env(state);
-            add_to_scope(construct_null(state), STR("this"), state);
+            add_to_scope(construct_null(state->heap), STR("this"), state);
             for (size_t i = 0; i < fc->argument_cnt; i++) {
                 add_to_scope(args[i], ((AstFunction *)fun->val)->parameters[i], state);
             }
@@ -404,7 +406,7 @@ Value interpret(Ast *ast, IState *state) {
                     }
                 }
             } 
-            return construct_null(state);
+            return construct_null(state->heap);
         }
         case AST_BLOCK: {
             AstBlock *block = (AstBlock *) ast; 
@@ -429,7 +431,7 @@ Value interpret(Ast *ast, IState *state) {
             Value cond = interpret(loop->condition, state);
             while (true) {
                 if ((*cond == VK_BOOLEAN && !((Boolean *)cond)->val) || *cond == VK_NULL) {
-                    return construct_null(state);
+                    return construct_null(state->heap);
                 }
                 push_scope(state);
                 //we don't care about the return value of the loop body
@@ -462,7 +464,7 @@ Value interpret(Ast *ast, IState *state) {
             assert(sz->kind == VK_INTEGER);
             assert(sz->val >= 0);
             //alloc space for the array and gete the value (pointer) to the array
-            Array *arr = construct_array(sz->val, state);
+            Array *arr = construct_ast_array(sz->val, state->heap);
             //eval the initializer `sz` times and assign it to the array
             for (size_t i = 0; i < (size_t)sz->val; i++) {
                 //need to eval the initializer in tmp scope
@@ -497,7 +499,7 @@ Value interpret(Ast *ast, IState *state) {
             AstObject *object = (AstObject *) ast;
             Value parent = interpret(object->extends, state);
             size_t sz = object->member_cnt;
-            Object *obj = construct_object(sz, parent, state);
+            Object *obj = construct_ast_object(sz, parent, state->heap);
             for (size_t i = 0; i < sz; i++) {
                 assert(object->members[i]->kind == AST_DEFINITION);
                 AstDefinition *member = (AstDefinition *)object->members[i];

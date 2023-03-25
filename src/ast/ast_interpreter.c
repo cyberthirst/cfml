@@ -403,7 +403,7 @@ Value interpret(Ast *ast, IState *state) {
             assert(sz->kind == VK_INTEGER);
             assert(sz->val >= 0);
             //alloc space for the array and gete the value (pointer) to the array
-            Array *arr = construct_ast_array(sz->val, state->heap);
+            Array *arr = construct_array(sz->val, state->heap);
             //eval the initializer `sz` times and assign it to the array
             for (size_t i = 0; i < (size_t)sz->val; i++) {
                 //need to eval the initializer in tmp scope
@@ -438,7 +438,7 @@ Value interpret(Ast *ast, IState *state) {
             AstObject *object = (AstObject *) ast;
             Value parent = interpret(object->extends, state);
             size_t sz = object->member_cnt;
-            Object *obj = construct_ast_object(sz, parent, state->heap);
+            Object *obj = construct_object(sz, parent, state->heap);
             for (size_t i = 0; i < sz; i++) {
                 assert(object->members[i]->kind == AST_DEFINITION);
                 AstDefinition *member = (AstDefinition *)object->members[i];

@@ -101,6 +101,16 @@ void push_operand(uint8_t *value) {
     itp->operands[itp->op_sz++] = value;
 }
 
+void push_frame() {
+    assert(itp->frames_sz < MAX_FRAMES);
+    itp->frames_sz++;
+}
+
+void pop_frame() {
+    assert(itp->frames_sz > 0);
+    free(itp->frames[--itp->frames_sz].locals);
+}
+
 bool index_is_global(uint16_t index) {
     assert(*const_pool_map[index] == VK_STRING);
     for (int i = 0; i < globals.count; ++i) {
@@ -119,16 +129,19 @@ void exec_drop() {
     pop_operand();
 }
 
-void init_function_call(uint8_t argc) {
+void init_frame(uint8_t argc, Value receiver) {
     //we will atleast pop argc args + 1 for the function
     assert(itp->op_sz > argc);
     //itp->frames[itp->frames_sz].locals = malloc(fun->params + fun->locals);
-    itp->frames[itp->frames_sz].locals = malloc(sizeof (uint8_t *)*(argc + 1));
+    itp->frames[itp->frames_sz].locals = malloc(sizeof(uint8_t *) * (argc + 1));
     //set the args
-    itp->frames[itp->frames_sz].locals[0] = global_null;
+    itp->frames[itp->frames_sz].locals[0] = receiver;
     for (int i = argc; i > 0; --i) {
         itp->frames[itp->frames_sz].locals[i] = pop_operand();
     }
+}
+
+void init_fun_call(uint8_t argc) {
     Bc_Func *fun = (Bc_Func *)pop_operand();
     assert(fun->kind == VK_FUNCTION);
     //TODO: we can read the function from the stack beforehand and prevent realloc
@@ -142,7 +155,7 @@ void init_function_call(uint8_t argc) {
     }
     //set the return address
     itp->frames[itp->frames_sz].ret_addr = itp->ip;
-    itp->frames_sz++;
+    push_frame();
     uint8_t *tmp_ip = itp->ip;
     itp->ip = fun->bytecode;
 }
@@ -307,7 +320,231 @@ void exec_call_function() {
     itp->ip += 1;
     //Bc_Func *fun= (Bc_Func *)pop_operand();
     //assert(fun->kind == VK_FUNCTION);
-    init_function_call(argc);
+    //in normal fun call the receiver is null
+    init_frame(argc, (Value)global_null);
+    init_fun_call(argc);
+}
+
+void exec_array() {
+    Value init_val = pop_operand();
+    Integer *size = (Integer *)pop_operand();
+    assert(size->kind == VK_INTEGER);
+    assert(size->val >= 0);
+    Array *array = construct_array(size->val, heap);
+    for (int i = 0; i < size->val; i++) {
+        array->val[i] = init_val;
+    }
+    push_operand((uint8_t *)array);
+}
+
+void exec_object() {
+    uint16_t index = *(uint16_t *)itp->ip;
+    itp->ip += 2;
+    Bc_Class *cls = const_pool_map[index];
+    assert(cls->kind == VK_CLASS);
+    //construct the object with parent NULL, will modify this later
+    Object *obj = construct_object(cls->count, NULL, heap);
+
+    Bc_String *name;
+    assert(itp->op_sz >= cls->count);
+    //traverse the class fields in reverse order and set the fields of the object
+    for (int i = cls->count - 1; i >= 0; i--) {
+        name = const_pool_map[cls->members[i]];
+        assert(name->kind == VK_STRING);
+        obj->val->name.len = name->len;
+        obj->val->name.str = name->value;
+        obj->val->val = pop_operand();
+    }
+    obj->parent = pop_operand();
+    push_operand((uint8_t *)obj);
+}
+
+void exec_get_field() {
+    uint16_t index = *(uint16_t *)itp->ip;
+    itp->ip += 2;
+    Bc_String *name = const_pool_map[index];
+    assert(name->kind == VK_STRING);
+    Object *obj = (Object *)pop_operand();
+    assert(obj->kind == VK_OBJECT);
+    for (int i = 0; i < obj->field_cnt; ++i) {
+        if (str_eq(obj->val[i].name, (Str){name->value, name->len})) {
+            push_operand(obj->val[i].val);
+            break;
+        }
+    }
+}
+
+void exec_set_field() {
+    uint16_t index = *(uint16_t *)itp->ip;
+    itp->ip += 2;
+    Bc_String *name = const_pool_map[index];
+    assert(name->kind == VK_STRING);
+    Value val = (Value)pop_operand();
+    Object *obj = (Object *)pop_operand();
+    assert(obj->kind == VK_OBJECT);
+    for (int i = 0; i < obj->field_cnt; ++i) {
+        if (str_eq(obj->val[i].name, (Str){name->value, name->len})) {
+            obj->val[i].val = val;
+            break;
+        }
+    }
+}
+
+//TODO this function is mission comparisson of different types (eg bool and int)
+void bc_builtins(Value obj, int argc, Str m_name) {
+    /*
+        FROM REFERENCE IMPLEMENTATION
+    */
+    const u8 *method_name = m_name.str;
+    size_t method_name_len = m_name.len;
+    #define METHOD(name) \
+			if (sizeof(name) - 1 == method_name_len && memcmp(name, method_name, method_name_len) == 0) /* body*/
+    if (*obj == VK_INTEGER || *obj == VK_BOOLEAN || *obj == VK_NULL) {
+        assert(argc == 1);
+        Value second = pop_operand();
+        METHOD("+") {
+            assert(*obj == VK_INTEGER && *second == VK_INTEGER);
+            push_operand(construct_integer(((Integer *)obj)->val + ((Integer *)second)->val, heap));
+        }
+        METHOD("-") {
+            assert(*obj == VK_INTEGER && *second == VK_INTEGER);
+            push_operand(construct_integer(((Integer *)obj)->val - ((Integer *)second)->val, heap));
+        }
+        METHOD("*") {
+            assert(*obj == VK_INTEGER && *second == VK_INTEGER);
+            push_operand(construct_integer(((Integer *)obj)->val * ((Integer *)second)->val, heap));
+        }
+        METHOD("/") {
+            assert(*obj == VK_INTEGER && *second == VK_INTEGER);
+            push_operand(construct_integer(((Integer *)obj)->val / ((Integer *)second)->val, heap));
+        }
+        METHOD("%") {
+            assert(*obj == VK_INTEGER && *second == VK_INTEGER);
+            push_operand(construct_integer(((Integer *)obj)->val % ((Integer *)second)->val, heap));
+        }
+        METHOD("<=") {
+            assert(*obj == VK_INTEGER && *second == VK_INTEGER);
+            push_operand(construct_boolean(((Integer *)obj)->val <= ((Integer *)second)->val, heap));
+        }
+        METHOD(">=") {
+            assert(*obj == VK_INTEGER && *second == VK_INTEGER);
+            push_operand(construct_boolean(((Integer *)obj)->val >= ((Integer *)second)->val, heap));
+        }
+        METHOD(">") {
+            assert(*obj == VK_INTEGER && *second == VK_INTEGER);
+            push_operand(construct_boolean(((Integer *)obj)->val > ((Integer *)second)->val, heap));
+        }
+        METHOD("<") {
+            assert(*obj == VK_INTEGER && *second == VK_INTEGER);
+            push_operand(construct_boolean(((Integer *)obj)->val < ((Integer *)second)->val, heap));
+        }
+        METHOD("==") {
+            if (*obj == VK_INTEGER && *second != VK_INTEGER)
+                push_operand(construct_boolean(false, heap));
+            else if (*obj == VK_INTEGER && *second == VK_INTEGER)
+                push_operand(construct_boolean(((Integer *)obj)->val == ((Integer *)second)->val, heap));
+            else if (*obj == VK_NULL && *second != VK_NULL)
+                push_operand(construct_boolean(false, heap));
+            else if (*obj == VK_NULL && *second == VK_NULL)
+                push_operand(construct_boolean(true, heap));
+            else if (*obj == VK_BOOLEAN && *second != VK_BOOLEAN)
+                push_operand(construct_boolean(false, heap));
+            else
+                push_operand(construct_boolean(((Boolean *) obj)->val == ((Boolean *) second)->val, heap));
+        }
+        METHOD("!=") {
+            if (*obj == VK_INTEGER && *second != VK_INTEGER)
+                push_operand(construct_boolean(true, heap));
+            else if (*obj == VK_INTEGER && *second == VK_INTEGER)
+                push_operand(construct_boolean(((Integer *)obj)->val != ((Integer *)second)->val, heap));
+            else if (*obj == VK_NULL && *second != VK_NULL)
+                push_operand(construct_boolean(true, heap));
+            else if (*obj == VK_NULL && *second == VK_NULL)
+                push_operand(construct_boolean(false, heap));
+            else if (*obj == VK_BOOLEAN && *second != VK_BOOLEAN)
+                push_operand(construct_boolean(true, heap));
+            else
+                push_operand(construct_boolean(((Boolean *) obj)->val != ((Boolean *) second)->val, heap));
+        }
+    }
+    if (*obj == VK_BOOLEAN) {
+        assert(argc == 1);
+        Value second = pop_operand();
+        METHOD("&") {
+            assert(*obj == VK_BOOLEAN && *second == VK_BOOLEAN);
+            push_operand(construct_boolean(((Boolean *)obj)->val & ((Boolean *)second)->val, heap));
+        }
+        METHOD("|") {
+            assert(*obj == VK_BOOLEAN && *second == VK_BOOLEAN);
+            push_operand(construct_boolean(((Boolean *)obj)->val | ((Boolean *)second)->val, heap));
+        }
+    }
+
+    METHOD("set") {
+        if (*obj == VK_ARRAY) {
+            Value index = pop_operand();
+            assert(*index == VK_INTEGER);
+            Array *array = (Array *)obj;
+            //TODO this is fishy: should i just peek?
+            //Array(arr)	set	Integer(i), v	arr(i) ← v; v
+            array->val[((Integer *)index)->val] = peek_operand();
+        }
+    }
+
+    METHOD("get") {
+        if (*obj == VK_ARRAY) {
+            Array *array = (Array *)obj;
+            Integer *index = (Integer *)pop_operand();
+            assert(index->kind == VK_INTEGER);
+            assert(index->val < array->size);
+            push_operand(array->val[index->val]);
+        }
+    }
+    //TODO print the method
+    printf("Unknown built-in method\n");
+    exit(1);
+}
+
+void bc_method_call(Value obj, Str name, int argc) {
+    Object *object = (Object *)obj;
+    //if inheriting from a primitive type then call the builtin
+    if (object->kind != VK_OBJECT) {
+        return bc_builtins(obj, argc, name);
+    }
+    for (size_t i = 0; i < object->field_cnt; i++) {
+        //if we find the method, then we just need to set the instruction pointer
+        //and prepare the locals, rest will be handled in the bytecode_loop
+        if (str_eq(object->val[i].name, name)) {
+            Field field = object->val[i];
+            assert(*field.val == VK_FUNCTION);
+            Function *func = (Function *)field.val;
+            //we push here the pointer to the function object
+            //this function object will be popped by the init_fun_call function
+            push_operand((uint8_t *)func);
+            init_fun_call(argc);
+            return;
+        }
+    }
+    return bc_method_call(object->parent, name, argc);
+}
+
+
+void exec_call_method() {
+    //index for the method to be called
+    uint16_t index = *(uint16_t *)itp->ip;
+    itp->ip += 2;
+    uint8_t argc = *(uint8_t *)itp->ip;
+    itp->ip += 1;
+
+    //name of the method
+    Bc_String *m_name = const_pool_map[index];
+    assert(m_name->kind == VK_STRING);
+
+    Object *obj = (Object *)pop_operand();
+
+    init_frame(argc, (Value)obj);
+
+    bc_method_call((Value)obj, (Str) {m_name->value, m_name->len}, argc);
 }
 
 void bytecode_loop(){
@@ -326,19 +563,19 @@ void bytecode_loop(){
                 exec_print();
                 break;
             case ARRAY:
-                // Implement ARRAY logic here
+                exec_array();
                 break;
             case OBJECT:
-                // Implement OBJECT logic here
+                exec_object();
                 break;
             case GET_FIELD:
-                // Implement GET_FIELD logic here
+                exec_get_field();
                 break;
             case SET_FIELD:
-                // Implement SET_FIELD logic here
+                exec_set_field();
                 break;
             case CALL_METHOD:
-                // Implement CALL_METHOD logic here
+                exec_call_method();
                 break;
             case CALL_FUNCTION:
                 exec_call_function();
@@ -376,8 +613,11 @@ void bc_interpret() {
     bc_init();
     //TODO initialize the global function
     Bc_Func *entry_point = itp->ip;
+    //we push the etry point function to the operand stack
+    //this function will be popped by the init_fun_call function
     push_operand(construct_bc_function(entry_point, heap));
-    init_function_call(0);
+    init_frame(0, (Value)global_null);
+    init_fun_call(0);
     bytecode_loop();
     bc_free();
 }

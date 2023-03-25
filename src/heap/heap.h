@@ -26,16 +26,16 @@ void print_heap(Heap *heap);
 void *heap_alloc(size_t sz, Heap *heap);
 
 
-Array *ast_array_alloc(int size, Heap *heap);
+Array *array_alloc(int size, Heap *heap);
 
 
-Value construct_ast_array(int size, Heap *heap);
+Value construct_array(int size, Heap *heap);
 
 
-Object *ast_object_alloc(int size, Heap *heap);
+Object *object_alloc(int size, Heap *heap);
 
 
-Value construct_ast_object(int size, Value parent, Heap *heap);
+Value construct_object(int size, Value parent, Heap *heap);
 
 Function *ast_function_alloc(Heap *heap);
 

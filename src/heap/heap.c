@@ -72,29 +72,31 @@ void print_heap(Heap *heap) {
     printf("-------------------------END OF HEAP-------------------------\n");
 }
 
-Array *ast_array_alloc(int size, Heap *heap) {
+Array *array_alloc(int size, Heap *heap) {
     //array is stored as folows:
     // ValueKind | size_t | Value[size]
     // ValueKind == VK_ARRAY | size_t == numOfElems(array) | Value[size] == array of values (aka pointers to the actual valuesa)
     return heap_alloc(sizeof(Array) + sizeof(Value) * size, heap);
 }
 
-Value construct_ast_array(int size, Heap *heap) {
-    Array *array = ast_array_alloc(size, heap);
+//TODO not constistent with other allocs
+//not setting the init value
+Value construct_array(int size, Heap *heap) {
+    Array *array = array_alloc(size, heap);
     array->kind = VK_ARRAY;
     array->size = size;
     return array;
 }
 
-Object *ast_object_alloc(int size, Heap *heap) {
+Object *object_alloc(int size, Heap *heap) {
     //object is stored as follows:
     // ValueKind | parent | size_t | Value[size]
     // ValueKind == VK_OBJECT | parent == VK_OBJECT | size_t == numOfFields(object) | Value[size] == array of Values (aka pointers members of the object)
     return heap_alloc(sizeof(Object) + sizeof(Field) * size, heap);
 }
 
-Value construct_ast_object(int size, Value parent, Heap *heap) {
-    Object *object = ast_object_alloc(size, heap);
+Value construct_object(int size, Value parent, Heap *heap) {
+    Object *object = object_alloc(size, heap);
     object->kind = VK_OBJECT;
     object->field_cnt = size;
     object->parent = parent;

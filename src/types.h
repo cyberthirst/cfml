@@ -93,7 +93,7 @@ typedef struct {
 typedef struct {
     uint8_t kind;
     uint32_t len;
-    char value[];
+    uint8_t value[];
 } Bc_String;
 
 typedef struct {

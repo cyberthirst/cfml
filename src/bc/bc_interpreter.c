@@ -45,7 +45,7 @@ Bc_Globals globals;
 uint16_t entry_point = 0;
 Bc_Interpreter *itp;
 Heap *heap;
-Null *global_null;
+Value global_null;
 
 void bc_init() {
     itp = malloc(sizeof(Bc_Interpreter));
@@ -114,7 +114,6 @@ void exec_drop() {
 }
 
 void init_frame(uint8_t argc, bool is_method) {
-    Bc_Interpreter *tmp_itp = itp;
     //we will pop argc args
     assert(itp->op_sz >= argc);
     //itp->frames[itp->frames_sz].locals = malloc(fun->params + fun->locals);
@@ -122,7 +121,6 @@ void init_frame(uint8_t argc, bool is_method) {
     for (int i = is_method ? argc - 1: argc; i > 0; --i) {
         itp->frames[itp->frames_sz].locals[i] = pop_operand();
     }
-    Integer * tmp = (Integer *) itp->frames[itp->frames_sz].locals[1];
     if (is_method) {
         //set the receiver
         Value obj = pop_operand();
@@ -130,7 +128,7 @@ void init_frame(uint8_t argc, bool is_method) {
     }
     else {
         //for normal function calls set the receiver to null
-        itp->frames[itp->frames_sz].locals[0] = (Value)global_null;
+        itp->frames[itp->frames_sz].locals[0] = global_null;
     }
 
 
@@ -153,49 +151,43 @@ void init_fun_call(uint8_t argc, bool is_method) {
     //set the return address
     itp->frames[itp->frames_sz].ret_addr = itp->ip;
     push_frame();
-    uint8_t *tmp_ip = itp->ip;
     itp->ip = fun->bytecode;
 }
 
 void exec_constant() {
     uint16_t index;
     index = *(uint16_t *) itp->ip;
-    Bc_Interpreter *tmp_itp = itp;
     //print_heap(heap);
     switch (*const_pool_map[index]) {
         case VK_INTEGER: {
-            Integer *integer = const_pool_map[index];
+            Integer *integer = (Integer *)const_pool_map[index];
             assert(integer->kind == VK_INTEGER);
-            integer = (Integer *) construct_integer(integer->val, heap);
-            push_operand((uint8_t *)integer);
-            Integer *tmp = (Integer *)itp->operands[itp->op_sz - 1];
+            push_operand(construct_integer(integer->val, heap));
             break;
         }
         case VK_NULL: {
-            Null *null = const_pool_map[index];
+            Null *null = (Null *)const_pool_map[index];
             assert(null->kind == VK_NULL);
-            null = global_null;
-            push_operand((uint8_t *)null);
+            push_operand(global_null);
             break;
         }
         case VK_BOOLEAN: {
-            Boolean *boolean = const_pool_map[index];
+            Boolean *boolean = (Boolean *)const_pool_map[index];
             assert(boolean->kind == VK_BOOLEAN);
-            boolean = (Boolean *) construct_boolean(boolean->val, heap);
-            push_operand((uint8_t *)boolean);
+            push_operand(construct_boolean(boolean->val, heap));
             break;
         }
         case VK_STRING: {
-            Bc_String *string = const_pool_map[index];
-            string = construct_bc_string(string, heap);
-            push_operand((uint8_t *)string);
+            Bc_String *string = (Bc_String *)const_pool_map[index];
+            assert(string->kind == VK_STRING);
+            push_operand(construct_bc_string(string, heap));
             break;
         }
 
         case VK_FUNCTION: {
-            Bc_Func *function = const_pool_map[index];
-            function = construct_bc_function(function, heap);
-            push_operand((uint8_t *)function);
+            Bc_Func *function = (Bc_Func *)const_pool_map[index];
+            assert(function->kind == VK_FUNCTION);
+            push_operand(construct_bc_function(function, heap));
             break;
         }
         default: {
@@ -208,16 +200,14 @@ void exec_constant() {
 }
 
 void exec_print() {
-    Bc_Interpreter *tmp_itp = itp;
     //assert that there is index to the constant pool, where the format str is stored
     //assert(itp.op_sz);
     uint16_t index = *(uint16_t *) itp->ip;
     itp->ip += 2;
     uint8_t num_args = *(uint8_t *)itp->ip;
     itp->ip += 1;
-    Bc_String *prnt = const_pool_map[index];
+    Bc_String *prnt = (Bc_String *)const_pool_map[index];
     assert(prnt->kind == VK_STRING);
-    char *tmp = prnt->value;
 
     Value val[num_args];
     for (int i = num_args - 1; i >= 0; --i) {
@@ -258,7 +248,7 @@ void exec_print() {
             }
         }
     }
-    push_operand((uint8_t *)global_null);
+    push_operand(global_null);
 }
 
 void exec_return() {
@@ -327,7 +317,7 @@ void exec_array() {
     Integer *size = (Integer *)pop_operand();
     assert(size->kind == VK_INTEGER);
     assert(size->val >= 0);
-    Array *array = construct_array(size->val, heap);
+    Array *array = (Array *)construct_array(size->val, heap);
     for (int i = 0; i < size->val; i++) {
         array->val[i] = init_val;
     }
@@ -337,10 +327,10 @@ void exec_array() {
 void exec_object() {
     uint16_t index = *(uint16_t *)itp->ip;
     itp->ip += 2;
-    Bc_Class *cls = const_pool_map[index];
+    Bc_Class *cls = (Bc_Class *)const_pool_map[index];
     assert(cls->kind == VK_CLASS);
     //construct the object with parent global_null, will modify this later
-    Object *obj = (Object *)construct_object(cls->count, (Value)global_null, heap);
+    Object *obj = (Object *)construct_object(cls->count, global_null, heap);
     //print_heap(heap);
 
     Bc_String *name;
@@ -350,7 +340,7 @@ void exec_object() {
         name = (Bc_String *)const_pool_map[cls->members[i]];
         assert(name->kind == VK_STRING);
         obj->val[i].name.len = name->len;
-        obj->val[i].name.str = name->value;
+        obj->val[i].name.str = (uint8_t *)name->value;
         obj->val[i].val = pop_operand();
     }
     obj->parent = pop_operand();
@@ -359,7 +349,7 @@ void exec_object() {
 }
 
 Field *get_field(Object *obj, Bc_String *name) {
-    for (int i = 0; i < obj->field_cnt; ++i) {
+    for (size_t i = 0; i < obj->field_cnt; ++i) {
         if (str_eq(obj->val[i].name, (Str){name->value, name->len})) {
             return &obj->val[i];
             break;
@@ -376,7 +366,7 @@ Field *get_field(Object *obj, Bc_String *name) {
 void exec_get_field() {
     uint16_t index = *(uint16_t *)itp->ip;
     itp->ip += 2;
-    Bc_String *name = const_pool_map[index];
+    Bc_String *name = (Bc_String *)const_pool_map[index];
     assert(name->kind == VK_STRING);
     Object *obj = (Object *)pop_operand();
     assert(obj->kind == VK_OBJECT);
@@ -393,7 +383,7 @@ void exec_get_field() {
 void exec_set_field() {
     uint16_t index = *(uint16_t *)itp->ip;
     itp->ip += 2;
-    Bc_String *name = const_pool_map[index];
+    Bc_String *name = (Bc_String *)const_pool_map[index];
     assert(name->kind == VK_STRING);
     //val is new value for field name
     Value val = (Value)pop_operand();
@@ -412,7 +402,6 @@ void exec_set_field() {
 }
 
 uint8_t *get_nth_local(size_t n) {
-    Bc_Interpreter *tmp_itp = itp;
     assert(n <= itp->frames[itp->frames_sz - 1].locals_sz);
     //TODO this is hacky.. for builtins we don't call init_fun_call and thus a new frame is not created
     return itp->frames[itp->frames_sz].locals[n];
@@ -540,7 +529,7 @@ void bc_builtins(Value obj, int argc, Str m_name) {
             Array *array = (Array *)obj;
             Integer *index = (Integer *) get_nth_local(1);
             assert(index->kind == VK_INTEGER);
-            assert(index->val < array->size);
+            assert(index->val >= 0 && (size_t)index->val < array->size);
             push_operand(array->val[index->val]);
         }
         return;
@@ -554,7 +543,8 @@ void bc_method_call(Value obj, Str name, int argc) {
     Object *object = (Object *)obj;
     //if inheriting from a primitive type then call the builtin
     if (object->kind != VK_OBJECT) {
-        return bc_builtins(obj, argc, name);
+        bc_builtins(obj, argc, name);
+        return;
     }
     for (size_t i = 0; i < object->field_cnt; i++) {
         //if we find the method, then we just need to set the instruction pointer
@@ -570,7 +560,7 @@ void bc_method_call(Value obj, Str name, int argc) {
             return;
         }
     }
-    return bc_method_call(object->parent, name, argc);
+    bc_method_call(object->parent, name, argc);
 }
 
 
@@ -582,7 +572,7 @@ void exec_call_method() {
     itp->ip += 1;
 
     //name of the method
-    Bc_String *m_name = const_pool_map[index];
+    Bc_String *m_name = (Bc_String *)const_pool_map[index];
 
     assert(m_name->kind == VK_STRING);
 
@@ -595,7 +585,6 @@ void exec_call_method() {
 }
 
 void bytecode_loop(){
-    Bc_Interpreter *tmp_interpreter = itp;
     while (itp->frames_sz) {
         //print_heap(heap);
         print_instruction_type(*itp->ip);
@@ -661,11 +650,9 @@ void bytecode_loop(){
 
 void bc_interpret() {
     bc_init();
-    //TODO initialize the global function
-    Bc_Func *entry_point = itp->ip;
     //we push the etry point function to the operand stack
     //this function will be popped by the init_fun_call function
-    push_operand(construct_bc_function(entry_point, heap));
+    push_operand(itp->ip);
     init_frame(0, false);
     init_fun_call(0, false);
     bytecode_loop();

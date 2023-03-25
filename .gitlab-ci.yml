@@ -24,4 +24,5 @@ test:
         operators
         dispatch
         arrays
-        getters_and_settersudoku
+        getters_and_setters
+        

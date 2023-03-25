@@ -62,7 +62,7 @@ void usage(const char *progname) {
 }
 
 int main(int argc, char *argv[]) {
-    size_t optind = 1;
+    int optind = 1;
 
     if (argc < 2) {
         usage(argv[0]);

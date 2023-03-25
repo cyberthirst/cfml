@@ -9,4 +9,5 @@ exe = executable('fml',
   'src/ast/ast_interpreter.c',
   'src/heap/heap.c',
   'src/bc/bc_interpreter.c',
+  'src/utils.c',
   install : true)

@@ -15,24 +15,7 @@
 #define MAX_OPERANDS (1024 * 16)
 #define MAX_FRAMES (1024 * 16)
 
-typedef enum {
-    DROP = 0x00,
-    CONSTANT = 0x01,
-    PRINT = 0x02,
-    ARRAY = 0x03,
-    OBJECT = 0x04,
-    GET_FIELD = 0x05,
-    SET_FIELD = 0x06,
-    CALL_METHOD = 0x07,
-    CALL_FUNCTION = 0x08,
-    SET_LOCAL = 0x09,
-    GET_LOCAL = 0x0A,
-    SET_GLOBAL = 0x0B,
-    GET_GLOBAL = 0x0C,
-    BRANCH = 0x0D,
-    JUMP = 0x0E,
-    RETURN = 0x0F,
-} Instruction;
+
 
 typedef struct {
     uint8_t *ret_addr;
@@ -382,12 +365,14 @@ void exec_set_field() {
     itp->ip += 2;
     Bc_String *name = const_pool_map[index];
     assert(name->kind == VK_STRING);
+    //val is new value for field name
     Value val = (Value)pop_operand();
     Object *obj = (Object *)pop_operand();
     assert(obj->kind == VK_OBJECT);
     for (int i = 0; i < obj->field_cnt; ++i) {
         if (str_eq(obj->val[i].name, (Str){name->value, name->len})) {
             obj->val[i].val = val;
+            push_operand(val);
             break;
         }
     }
@@ -554,7 +539,7 @@ void bytecode_loop(){
     Bc_Interpreter *tmp_interpreter = itp;
     while (itp->frames_sz) {
         //print_heap(heap);
-        print_op_stack(itp->operands, itp->op_sz);
+        print_instruction_type(*itp->ip);
         switch (*itp->ip++) {
             case DROP: {
                 exec_drop();
@@ -610,6 +595,7 @@ void bytecode_loop(){
                 printf("Unknown instruction: 0x%02X\n", *itp->ip);
                 exit(1);
         }
+        print_op_stack(itp->operands, itp->op_sz);
     }
 }
 

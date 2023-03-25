@@ -5,6 +5,20 @@
 #include <printf.h>
 #include "utils.h"
 
+#define DEBUG 0
+#if DEBUG
+    #define PRINT_IF_DEBUG_ON
+#else
+    #define PRINT_IF_DEBUG_ON return
+#endif
+
+// Comparison function for qsort
+int field_cmp(const void *a, const void *b) {
+    Field *field1 = *(Field **)a;
+    Field *field2 = *(Field **)b;
+    return strncmp(field1->name.str, field2->name.str, field1->name.len < field2->name.len ? field1->name.len : field2->name.len);
+}
+
 void print_val(Value val) {
     switch(*val) {
         case VK_INTEGER: {
@@ -44,16 +58,26 @@ void print_val(Value val) {
                     printf(", ");
                 }
             }
+            // Allocate a new array of Field pointers and copy the original Field pointers
+            Field **fields = (Field **)malloc(obj->field_cnt * sizeof(Field *));
+            for (size_t i = 0; i < obj->field_cnt; ++i) {
+                fields[i] = &obj->val[i];
+            }
+            // Sort the new array of Field pointers
+            qsort(fields, obj->field_cnt, sizeof(Field *), field_cmp);
             for (size_t i = 0; i < obj->field_cnt; i++) {
                 //print_my_str(obj->val[i].name);
-                printf("%.*s", (int)obj->val[i].name.len, obj->val[i].name.str);
+                //printf("%.*s", (int)obj->val[i].name.len, obj->val[i].name.str);
+                printf("%.*s", (int)fields[i]->name.len, fields[i]->name.str);
                 printf("=");
-                print_val(obj->val[i].val);
+                //print_val(obj->val[i].val);
+                print_val(fields[i]->val);
                 if (i != obj->field_cnt - 1) {
                     printf(", ");
                 }
             }
             printf(")");
+            free(fields);
             break;
         }
         default: {
@@ -64,6 +88,7 @@ void print_val(Value val) {
 }
 
 void print_op_stack(Value *stack, size_t size) {
+    PRINT_IF_DEBUG_ON;
     printf("op_stack(:\n");
     for (size_t i = 0; i < size; ++i) {
         printf("\top %d: ", i);
@@ -76,6 +101,63 @@ void print_op_stack(Value *stack, size_t size) {
         }
     }
     printf(")\n");
+}
+
+void print_instruction_type(Instruction ins) {
+    PRINT_IF_DEBUG_ON;
+    switch (ins) {
+        case DROP:
+            printf("DROP\n");
+            break;
+        case CONSTANT:
+            printf("CONSTANT\n");
+            break;
+        case PRINT:
+            printf("PRINT\n");
+            break;
+        case ARRAY:
+            printf("ARRAY\n");
+            break;
+        case OBJECT:
+            printf("OBJECT\n");
+            break;
+        case GET_FIELD:
+            printf("GET_FIELD\n");
+            break;
+        case SET_FIELD:
+            printf("SET_FIELD\n");
+            break;
+        case CALL_METHOD:
+            printf("CALL_METHOD\n");
+            break;
+        case CALL_FUNCTION:
+            printf("CALL_FUNCTION\n");
+            break;
+        case SET_LOCAL:
+            printf("SET_LOCAL\n");
+            break;
+        case GET_LOCAL:
+            printf("GET_LOCAL\n");
+            break;
+        case SET_GLOBAL:
+            printf("SET_GLOBAL\n");
+            break;
+        case GET_GLOBAL:
+            printf("GET_GLOBAL\n");
+            break;
+        case BRANCH:
+            printf("BRANCH\n");
+            break;
+        case JUMP:
+            printf("JUMP\n");
+            break;
+        case RETURN:
+            printf("RETURN\n");
+            break;
+        default:
+            printf("Unknown instruction: 0x%02X\n", ins);
+            exit(1);
+    }
 }
 
 bool is_primitive(ValueKind kind){

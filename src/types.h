@@ -22,6 +22,25 @@ typedef enum {
     VK_OBJECT,
 } ValueKind;
 
+typedef enum {
+    DROP = 0x00,
+    CONSTANT = 0x01,
+    PRINT = 0x02,
+    ARRAY = 0x03,
+    OBJECT = 0x04,
+    GET_FIELD = 0x05,
+    SET_FIELD = 0x06,
+    CALL_METHOD = 0x07,
+    CALL_FUNCTION = 0x08,
+    SET_LOCAL = 0x09,
+    GET_LOCAL = 0x0A,
+    SET_GLOBAL = 0x0B,
+    GET_GLOBAL = 0x0C,
+    BRANCH = 0x0D,
+    JUMP = 0x0E,
+    RETURN = 0x0F,
+} Instruction;
+
 typedef uint8_t *Value;
 
 /*typedef struct Array Array;

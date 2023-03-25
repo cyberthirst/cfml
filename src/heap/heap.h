@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include <printf.h>
 #include <stdint.h>
 #include "../parser.h"
 #include "../types.h"

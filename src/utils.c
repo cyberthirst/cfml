@@ -2,7 +2,8 @@
 // Created by Mirek Škrabal on 25.03.2023.
 //
 
-#include <printf.h>
+#include <stdio.h>
+
 #include "utils.h"
 
 #define DEBUG 0

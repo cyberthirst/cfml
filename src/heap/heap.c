@@ -2,6 +2,8 @@
 // Created by Mirek Škrabal on 24.03.2023.
 //
 
+#include <stdio.h>
+
 #include "heap.h"
 #include "../ast/ast_interpreter.h"
 

@@ -68,6 +68,12 @@ void bc_free() {
     free(itp->frames);
     free(itp->operands);
     free(itp);
+    free(const_pool);
+    free(const_pool_map);
+    free(heap->heap_start);
+    free(heap);
+    free(globals.values);
+    free(globals.indexes);
 }
 
 uint8_t *pop_operand() {
@@ -685,7 +691,9 @@ void deserialize(const char* filename) {
     //TODO implement the checks on cp size
     const_pool = malloc(CONST_POOL_SZ);
 
-    const_pool_map  = malloc(sizeof(void*) * const_pool_count);
+    //we allocate + 1 because in the for-loop below we always assign the addr for i+1th element
+    //this would be annoying to solve for the last elem
+    const_pool_map  = malloc(sizeof(void*) * (const_pool_count + 1));
 
     //the first obj start at the beginning of the const_pool
     const_pool_map[0] = const_pool;

@@ -9,6 +9,7 @@
 
 #include "bc_interpreter.h"
 #include "../heap/heap.h"
+#include "../utils.h"
 
 //we can have max 1024 * 16 ptrs to the heap
 #define MAX_OPERANDS (1024 * 16)
@@ -342,21 +343,23 @@ void exec_object() {
     itp->ip += 2;
     Bc_Class *cls = const_pool_map[index];
     assert(cls->kind == VK_CLASS);
-    //construct the object with parent NULL, will modify this later
-    Object *obj = construct_object(cls->count, NULL, heap);
+    //construct the object with parent global_null, will modify this later
+    Object *obj = (Object *)construct_object(cls->count, (Value)global_null, heap);
+    //print_heap(heap);
 
     Bc_String *name;
     assert(itp->op_sz >= cls->count);
     //traverse the class fields in reverse order and set the fields of the object
     for (int i = cls->count - 1; i >= 0; i--) {
-        name = const_pool_map[cls->members[i]];
+        name = (Bc_String *)const_pool_map[cls->members[i]];
         assert(name->kind == VK_STRING);
-        obj->val->name.len = name->len;
-        obj->val->name.str = name->value;
-        obj->val->val = pop_operand();
+        obj->val[i].name.len = name->len;
+        obj->val[i].name.str = name->value;
+        obj->val[i].val = pop_operand();
     }
     obj->parent = pop_operand();
     push_operand((uint8_t *)obj);
+    //print_heap(heap);
 }
 
 void exec_get_field() {
@@ -500,8 +503,8 @@ void bc_builtins(Value obj, int argc, Str m_name) {
             push_operand(array->val[index->val]);
         }
     }
-    //TODO print the method
-    printf("Unknown built-in method\n");
+    printf("Unknown built-in method: ");
+    printf("%.*s\n", (int)m_name.len, m_name.str);
     exit(1);
 }
 
@@ -550,6 +553,8 @@ void exec_call_method() {
 void bytecode_loop(){
     Bc_Interpreter *tmp_interpreter = itp;
     while (itp->frames_sz) {
+        //print_heap(heap);
+        print_op_stack(itp->operands, itp->op_sz);
         switch (*itp->ip++) {
             case DROP: {
                 exec_drop();

@@ -33,7 +33,7 @@ void *heap_alloc(size_t sz, Heap *heap) {
 
 //TODO add printing of all types
 void print_heap(Heap *heap) {
-    printf("------------------------PRINTING HEAP------------------------\n");
+    printf("heap(:\n");
     uint8_t *ptr = heap->heap_start;
     int cnt = 0;
     while (ptr < heap->heap_free) {
@@ -56,6 +56,12 @@ void print_heap(Heap *heap) {
             case VK_STRING: {
                 Bc_String *str = (Bc_String *) ptr;
                 ptr += sizeof(Bc_String) + str->len;
+                break;
+            }
+            case VK_OBJECT: {
+                Object *obj = (Object *) ptr;
+                ptr += sizeof(Object) + sizeof(Field) * obj->field_cnt;
+                break;
             }
             case VK_FUNCTION: {
                 Bc_Func *func = (Bc_Func *) ptr;
@@ -69,7 +75,7 @@ void print_heap(Heap *heap) {
             ptr += diff;
         }
     }
-    printf("-------------------------END OF HEAP-------------------------\n");
+    printf("\n)\n");
 }
 
 Array *array_alloc(int size, Heap *heap) {

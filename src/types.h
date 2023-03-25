@@ -4,6 +4,13 @@
 
 #pragma once
 
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdlib.h>
+
+#include "parser.h"
+
+
 typedef enum {
     VK_INTEGER = 0x00,
     VK_NULL = 0x01,

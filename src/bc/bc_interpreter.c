@@ -76,12 +76,17 @@ void bc_free() {
     free(globals.indexes);
 }
 
-uint8_t *pop_operand() {
+Value pop_operand() {
     assert(itp->op_sz > 0);
     return itp->operands[--itp->op_sz];
 }
 
-uint8_t *peek_operand() {
+void pop_n_operands(size_t n) {
+    assert(itp->op_sz >= n);
+    itp->op_sz -= n;
+}
+
+Value peek_operand() {
     assert(itp->op_sz > 0);
     return itp->operands[itp->op_sz - 1];
 }
@@ -114,8 +119,6 @@ bool index_is_global(uint16_t index) {
 void exec_drop() {
     //assert that there is something to be dropped
     assert(itp->op_sz > 0);
-    //TODO should I free here?
-    //free(itp->operands[itp->op_sz--]);
     pop_operand();
 }
 
@@ -215,15 +218,16 @@ void exec_print() {
     Bc_String *prnt = (Bc_String *)const_pool_map[index];
     assert(prnt->kind == VK_STRING);
 
-    Value val[num_args];
-    for (int i = num_args - 1; i >= 0; --i) {
-        val[i] = (Value)pop_operand();
-    }
+    //pop all the operands at once, see the comment before print_val
+    pop_n_operands(num_args);
     size_t tilda = 0;
     for (size_t i = 0; i < prnt->len; i++) {
         if (prnt->value[i] == '~') {
-            //we are only concerned with valid programs so each ~ will have a corresponding value
-            print_val(val[tilda]);
+            //we popped num_args operands from the stack
+            //thus the current stack pointer points to the first argument of the print
+            //arg1 is the first field of the "print_args" array thus we only add tilda
+            print_val(itp->operands[itp->op_sz + tilda]);
+            //print_val((Value)pop_operand());
             tilda++;
         }
         else {
@@ -294,7 +298,6 @@ void exec_get_global() {
 void exec_jump() {
     int16_t offset = *(int16_t *)itp->ip;
     itp->ip += 2;
-    //TODO is it ok to add int16_t to uint8_t*?
     itp->ip += offset;
 }
 
@@ -355,16 +358,15 @@ void exec_object() {
 }
 
 Field *get_field(Object *obj, Bc_String *name) {
+    assert(obj->kind == VK_OBJECT);
     for (size_t i = 0; i < obj->field_cnt; ++i) {
         if (str_eq(obj->val[i].name, (Str){name->value, name->len})) {
             return &obj->val[i];
-            break;
         }
     }
-    //TODO fishy comparison, I think we shouldn't compare with NULL
-    if (obj->parent != NULL) {
+    //if the parent is of primitive type then the field is not found
+    if (*obj->parent == VK_OBJECT)
         return get_field((Object *)obj->parent, name);
-    }
     printf("field not found: %s", name->value);
     exit(1);
 }

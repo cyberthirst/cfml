@@ -17,7 +17,14 @@
 int field_cmp(const void *a, const void *b) {
     Field *field1 = *(Field **)a;
     Field *field2 = *(Field **)b;
-    return strncmp(field1->name.str, field2->name.str, field1->name.len < field2->name.len ? field1->name.len : field2->name.len);
+    size_t min_length = field1->name.len < field2->name.len ? field1->name.len : field2->name.len;
+    int cmp = strncmp(field1->name.str, field2->name.str, min_length);
+
+    if (cmp != 0) {
+        return cmp;
+    } else {
+        return field1->name.len - field2->name.len;
+    }
 }
 
 void print_val(Value val) {

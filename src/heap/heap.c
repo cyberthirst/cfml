@@ -160,22 +160,28 @@ Bc_String *bc_string_alloc(uint32_t size, Heap *heap) {
     return heap_alloc(sizeof(Bc_String) + sizeof(uint8_t) * size, heap);
 }
 
-//deep copy of the string to the heap
+//we don't need to copy the string string, we can just refer to it's value in cp
+//have this intermediate function so we can change the behaviour later
 Value construct_bc_string(Bc_String *str, Heap *heap) {
-    Bc_String *string = bc_string_alloc(str->len, heap);
+    //deep copy of the string to the heap
+    /*Bc_String *string = bc_string_alloc(str->len, heap);
     memcpy(string, str, sizeof(Bc_String ) + str->len);
-    return string;
+    return string;*/
+    return str;
 }
 
 Bc_Func *bc_function_alloc(uint32_t size, Heap *heap) {
     return heap_alloc(sizeof(Bc_Func) + sizeof(uint8_t) * size, heap);
 }
 
-//deep copy of the function to the heap
+
+//we don't need to copy the function, we can just refer to it's value in cp
 Value construct_bc_function(Bc_Func *func, Heap *heap) {
-    Bc_Func *bc_func = bc_function_alloc(func->len, heap);
+    //deep copy of the function to the heap
+    /*Bc_Func *bc_func = bc_function_alloc(func->len, heap);
     memcpy(bc_func, func, sizeof(Bc_Func) + func->len);
-    return bc_func;
+    return bc_func;*/
+    return func;
 }
 
 //BYTECODE HEAP ALLOCS

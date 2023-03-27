@@ -14,3 +14,11 @@ void print_op_stack(Value *stack, size_t size);
 void print_instruction_type(Instruction ins);
 
 bool is_primitive(ValueKind kind);
+
+uint16_t deserialize_u16(const uint8_t *data);
+
+int16_t deserialize_i16(const uint8_t *data);
+
+uint32_t deserialize_u32(const uint8_t *data);
+
+bool truthiness(Value val);

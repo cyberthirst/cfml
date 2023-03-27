@@ -13,6 +13,30 @@
     #define PRINT_IF_DEBUG_ON return
 #endif
 
+
+uint16_t deserialize_u16(const uint8_t *data) {
+    return (data[0]<<0) | (data[1]<<8);
+}
+
+int16_t deserialize_i16(const uint8_t *data) {
+    return (data[0]<<0) | (data[1]<<8);
+}
+
+uint32_t deserialize_u32(const uint8_t *data) {
+    return (data[0]<<0) | (data[1]<<8) | (data[2]<<16) | (data[3]<<24);
+}
+
+bool truthiness(Value val) {
+    if (*val == VK_NULL) {
+        return false;
+    }
+    if (*val == VK_BOOLEAN) {
+        Boolean *boolean = (Boolean *)val;
+        return boolean->val;
+    }
+    return true;
+}
+
 // Comparison function for qsort
 int field_cmp(const void *a, const void *b) {
     Field *field1 = *(Field **)a;

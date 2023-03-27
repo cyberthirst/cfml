@@ -55,6 +55,7 @@ void usage(const char *progname) {
     fprintf(stderr, "Usage: %s [options] <file>\n", progname);
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  ast_interpret          Interpret the source file as an abstract syntax tree\n");
+    fprintf(stderr, "  bc_interpret           Interpret the source file as bytecode\n");
     fprintf(stderr, "  run                    Run the source file as a program\n");
     fprintf(stderr, "  --heap-size <size>     Set the heap size in bytes (default: %d)\n", DEFAULT_HEAP_SIZE);
     fprintf(stderr, "  --heap-log <filename>  Set the heap log file (default: %s)\n", DEFAULT_HEAP_LOG_FILE);

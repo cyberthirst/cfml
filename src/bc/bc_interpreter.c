@@ -62,6 +62,10 @@ void bc_init() {
     global_null = construct_null(heap);
     //array that acts like a hash map - we just allocate as big array as there are constants
     globals.values = malloc(sizeof(void *) * const_pool_count);
+    //TODO could we use memset here or smth similar?
+    for (int i = 0; i < const_pool_count; i++) {
+        globals.values[i] = global_null;
+    }
 }
 
 void bc_free() {
@@ -164,8 +168,8 @@ void init_fun_call(uint8_t argc, bool is_method) {
 }
 
 void exec_constant() {
-    uint16_t index;
-    index = *(uint16_t *) itp->ip;
+    uint16_t index = deserialize_u16(itp->ip);
+
     //print_heap(heap);
     switch (*const_pool_map[index]) {
         case VK_INTEGER: {
@@ -211,9 +215,9 @@ void exec_constant() {
 void exec_print() {
     //assert that there is index to the constant pool, where the format str is stored
     //assert(itp.op_sz);
-    uint16_t index = *(uint16_t *) itp->ip;
+    uint16_t index = deserialize_u16(itp->ip);
     itp->ip += 2;
-    uint8_t num_args = *(uint8_t *)itp->ip;
+    uint8_t num_args = *itp->ip;
     itp->ip += 1;
     Bc_String *prnt = (Bc_String *)const_pool_map[index];
     assert(prnt->kind == VK_STRING);
@@ -268,7 +272,7 @@ void exec_return() {
 }
 
 void exec_get_local() {
-    uint16_t index = *(uint16_t *)itp->ip;
+    uint16_t index = deserialize_u16(itp->ip);
     itp->ip += 2;
     //printf("get local: \n");
     //print_val((Value)itp->frames[itp->frames_sz - 1].locals[index]);
@@ -276,43 +280,40 @@ void exec_get_local() {
 }
 
 void exec_set_local() {
-    uint16_t index = *(uint16_t *)itp->ip;
+    uint16_t index = deserialize_u16(itp->ip);
     itp->ip += 2;
     itp->frames[itp->frames_sz - 1].locals[index] = peek_operand();
 }
 
 void exec_set_global() {
-    uint16_t index = *(uint16_t *)itp->ip;
+    uint16_t index = deserialize_u16(itp->ip);
     assert(index_is_global(index));
     itp->ip += 2;
     globals.values[index] = peek_operand();
 }
 
 void exec_get_global() {
-    uint16_t index = *(uint16_t *)itp->ip;
+    uint16_t index = deserialize_u16(itp->ip);
     assert(index_is_global(index));
     itp->ip += 2;
     push_operand(globals.values[index]);
 }
 
 void exec_jump() {
-    int16_t offset = *(int16_t *)itp->ip;
+    int16_t offset = deserialize_i16(itp->ip);
     itp->ip += 2;
     itp->ip += offset;
 }
 
 void exec_branch() {
-    int16_t offset = *(int16_t *)itp->ip;
+    int16_t offset = deserialize_i16(itp->ip);
     itp->ip += 2;
-    Boolean *boolean = (Boolean *)pop_operand();
-    assert(boolean->kind == VK_BOOLEAN);
-    if (boolean->val) {
+    if (truthiness(pop_operand()))
         itp->ip += offset;
-    }
 }
 
 void exec_call_function() {
-    uint8_t argc = *(uint8_t *)itp->ip;
+    uint8_t argc = *itp->ip;
     itp->ip += 1;
     //Bc_Func *fun= (Bc_Func *)pop_operand();
     //assert(fun->kind == VK_FUNCTION);
@@ -334,7 +335,7 @@ void exec_array() {
 }
 
 void exec_object() {
-    uint16_t index = *(uint16_t *)itp->ip;
+    uint16_t index = deserialize_u16(itp->ip);
     itp->ip += 2;
     Bc_Class *cls = (Bc_Class *)const_pool_map[index];
     assert(cls->kind == VK_CLASS);
@@ -372,7 +373,7 @@ Field *get_field(Object *obj, Bc_String *name) {
 }
 
 void exec_get_field() {
-    uint16_t index = *(uint16_t *)itp->ip;
+    uint16_t index = deserialize_u16(itp->ip);
     itp->ip += 2;
     Bc_String *name = (Bc_String *)const_pool_map[index];
     assert(name->kind == VK_STRING);
@@ -380,16 +381,10 @@ void exec_get_field() {
     assert(obj->kind == VK_OBJECT);
     Field *field = get_field(obj, name);
     push_operand(field->val);
-    /*for (int i = 0; i < obj->field_cnt; ++i) {
-        if (str_eq(obj->val[i].name, (Str){name->value, name->len})) {
-            push_operand(obj->val[i].val);
-            break;
-        }
-    }*/
 }
 
 void exec_set_field() {
-    uint16_t index = *(uint16_t *)itp->ip;
+    uint16_t index = deserialize_u16(itp->ip);
     itp->ip += 2;
     Bc_String *name = (Bc_String *)const_pool_map[index];
     assert(name->kind == VK_STRING);
@@ -400,13 +395,6 @@ void exec_set_field() {
     Field *field = get_field(obj, name);
     field->val = val;
     push_operand(val);
-    /*for (int i = 0; i < obj->field_cnt; ++i) {
-        if (str_eq(obj->val[i].name, (Str){name->value, name->len})) {
-            obj->val[i].val = val;
-            push_operand(val);
-            break;
-        }
-    }*/
 }
 
 uint8_t *get_nth_local(size_t n) {
@@ -574,9 +562,9 @@ void bc_method_call(Value obj, Str name, int argc) {
 
 void exec_call_method() {
     //index for the method to be called
-    uint16_t index = *(uint16_t *)itp->ip;
+    uint16_t index = deserialize_u16(itp->ip);
     itp->ip += 2;
-    uint8_t argc = *(uint8_t *)itp->ip;
+    uint8_t argc = *itp->ip;
     itp->ip += 1;
 
     //name of the method
@@ -667,6 +655,13 @@ void bc_interpret() {
     bc_free();
 }
 
+uint8_t *align_address(uint8_t *ptr){
+    size_t diff = 8 - ((uintptr_t)ptr % 8);
+    if (diff != 8) {
+        ptr += diff;
+    }
+    return ptr;
+}
 
 void deserialize(const char* filename) {
     FILE* file = fopen(filename, "rb");
@@ -699,7 +694,8 @@ void deserialize(const char* filename) {
 
     //the first obj start at the beginning of the const_pool
     const_pool_map[0] = const_pool;
-
+    //tmp array for deserialization
+    uint8_t tmp_data[4];
     // Read the constant pool objects and fill the const_pool & const_pool_map array
     uint8_t tag;
     for (uint16_t i = 0; i < const_pool_count; ++i) {
@@ -709,53 +705,57 @@ void deserialize(const char* filename) {
             case VK_INTEGER: {
                 Integer *integer = (Integer  *)const_pool_map[i];
                 integer->kind = tag;
-                fread(&integer->val, sizeof(int32_t), 1, file);
+                fread(&tmp_data, sizeof(int32_t), 1, file);
+                integer->val = (tmp_data[0]<<0) | (tmp_data[1]<<8) | (tmp_data[2]<<16) | ((uint32_t)tmp_data[3]<<24);
                 //we use ValueKind and not uint8_t as tag, thus we don't have jsut sizeof(Integer)
-                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Integer);
+                const_pool_map[i + 1] = align_address(const_pool_map[i] + sizeof(Integer));
                 break;
             }
             case VK_BOOLEAN: {
                 Boolean *boolean = (Boolean  *)const_pool_map[i];
                 boolean->kind = tag;
                 fread(&boolean->val, sizeof(uint8_t), 1, file);
-                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Boolean);
+                const_pool_map[i + 1] = align_address(const_pool_map[i] + sizeof(Boolean));
                 break;
             }
             case VK_NULL: {
                 Null *null = (Null  *)const_pool_map[i];
                 null->kind = tag;
-                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Null);
+                const_pool_map[i + 1] = align_address(const_pool_map[i] + sizeof(Null));
                 break;
             }
             case VK_STRING: {
                 Bc_String *string = (Bc_String  *)const_pool_map[i];
                 string->kind = tag;
                 fread(&string->len, sizeof(uint32_t), 1, file);
-                //string + sizefof(uint32_t) + 1 is the address where value should start
-                //string->value = (char *)((uint8_t *)string + sizeof(uint32_t) + 1);
                 fread(string->value, sizeof(char), string->len, file);
                 string->value[string->len] = '\0';
-                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_String) + string->len;
+                const_pool_map[i + 1] = align_address(const_pool_map[i] + sizeof(Bc_String) + string->len);
                 break;
             }
             case VK_FUNCTION: {
                 Bc_Func *function = (Bc_Func  *)const_pool_map[i];
                 function->kind = tag;
                 fread(&function->params, sizeof(uint8_t), 1, file);
-                fread(&function->locals, sizeof(uint16_t), 1, file);
-                fread(&function->len, sizeof(uint32_t), 1, file);
-                //function->bytecode = (uint8_t *)(function + sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint32_t));
+                fread(&tmp_data, sizeof(uint16_t), 1, file);
+                function->locals = (tmp_data[0]<<0) | (tmp_data[1]<<8);
+                fread(&tmp_data, sizeof(uint32_t), 1, file);
+                function->len = (tmp_data[0]<<0) | (tmp_data[1]<<8) | (tmp_data[2]<<16) | (tmp_data[3]<<24);
+                //we don't have a special deserialization for bytecode, bytecode is deserialized upon execution
                 fread(function->bytecode, sizeof(uint8_t), function->len, file);
-                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_Func) + function->len;
+                const_pool_map[i + 1] = align_address(const_pool_map[i] + sizeof(Bc_Func) + function->len);
                 break;
             }
             case VK_CLASS: {
                 Bc_Class *class = (Bc_Class *)const_pool_map[i];
                 class->kind = tag;
-                fread(&class->count, sizeof(uint16_t), 1, file);
-                //class->members = (uint16_t *)(class + sizeof(uint16_t));
-                fread(class->members, sizeof(uint16_t), class->count, file);
-                const_pool_map[i + 1] = const_pool_map[i] + sizeof(Bc_Class) + sizeof(uint16_t) * class->count;
+                fread(&tmp_data, sizeof(uint16_t), 1, file);
+                class->count = (tmp_data[0]<<0) | (tmp_data[1]<<8);
+                for (uint16_t j = 0; j < class->count; ++j) {
+                    fread(&tmp_data, sizeof(uint16_t), 1, file);
+                    class->members[j] = (tmp_data[0]<<0) | (tmp_data[1]<<8);
+                }
+                const_pool_map[i + 1] = align_address(const_pool_map[i] + sizeof(Bc_Class) + sizeof(uint16_t) * class->count);
                 break;
             }
             default: {
@@ -767,12 +767,18 @@ void deserialize(const char* filename) {
     }
 
     // Read the globals
-    fread(&globals.count, sizeof(uint16_t), 1, file);
+    fread(&tmp_data, sizeof(uint16_t), 1, file);
+    globals.count = (tmp_data[0]<<0) | (tmp_data[1]<<8);
     globals.indexes = malloc(sizeof(uint16_t) * globals.count);
     fread(globals.indexes, sizeof(uint16_t), globals.count, file);
+    uint8_t *tmp_i = (uint8_t *)globals.indexes;
+    for (uint16_t i = 0; i < globals.count; i += 1) {
+        globals.indexes[i] = (tmp_i[2*i]<<0) | (tmp_i[2*i + 1]<<8);
+    }
 
     // Read the entry point
-    fread(&entry_point, sizeof(uint16_t), 1, file);
+    fread(&tmp_data, sizeof(uint16_t), 1, file);
+    entry_point = (tmp_data[0]<<0) | (tmp_data[1]<<8);
     assert(entry_point < const_pool_count);
 
     // Cleanup

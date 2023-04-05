@@ -13,7 +13,7 @@
 #define DEFAULT_HEAP_SIZE 4096
 #define DEFAULT_HEAP_LOG_FILE "heap_log.csv"
 
-enum { ACTION_AST_INTERPRET, ACTION_BC_INTERPRET, ACTION_RUN } action = ACTION_AST_INTERPRET;
+enum { ACTION_AST_INTERPRET, ACTION_BC_INTERPRET, ACTION_RUN, ACTION_BC_COMPILE } action = ACTION_AST_INTERPRET;
 char *source_file = NULL;
 long long int heap_size = DEFAULT_HEAP_SIZE;
 char *heap_log_file = DEFAULT_HEAP_LOG_FILE;
@@ -57,6 +57,7 @@ void usage(const char *progname) {
     fprintf(stderr, "  ast_interpret          Interpret the source file as an abstract syntax tree\n");
     fprintf(stderr, "  bc_interpret           Interpret the source file as bytecode\n");
     fprintf(stderr, "  run                    Run the source file as a program\n");
+    fprintf(stderr, "  bc_compile             Compile the source file to bytecode\n");
     fprintf(stderr, "  --heap-size <size>     Set the heap size in bytes (default: %d)\n", DEFAULT_HEAP_SIZE);
     fprintf(stderr, "  --heap-log <filename>  Set the heap log file (default: %s)\n", DEFAULT_HEAP_LOG_FILE);
     exit(EXIT_FAILURE);
@@ -77,6 +78,9 @@ int main(int argc, char *argv[]) {
         optind++;
     } else if (strcmp(argv[optind], "run") == 0) {
         action = ACTION_RUN;
+        optind++;
+    } else if (strcmp(argv[optind], "bc_compile") == 0) {
+        action = ACTION_BC_COMPILE;
         optind++;
     } else {
         usage(argv[0]);
@@ -137,6 +141,11 @@ int main(int argc, char *argv[]) {
             bc_interpret();
             break;
         }
+        case ACTION_BC_COMPILE: {
+            printf("Running the bc_compiler on source file %s\n", source_file);
+            break;
+        }
+
         default:
             fprintf(stderr, "Invalid action %d\n", action);
             exit(EXIT_FAILURE);

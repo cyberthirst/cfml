@@ -51,6 +51,14 @@ int field_cmp(const void *a, const void *b) {
     }
 }
 
+uint8_t *align_address(uint8_t *ptr){
+    size_t diff = 8 - ((uintptr_t)ptr % 8);
+    if (diff != 8) {
+        ptr += diff;
+    }
+    return ptr;
+}
+
 void print_val(Value val) {
     switch(*val) {
         case VK_INTEGER: {

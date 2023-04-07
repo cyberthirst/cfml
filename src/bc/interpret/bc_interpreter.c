@@ -648,13 +648,7 @@ void bc_interpret() {
     bc_free();
 }
 
-uint8_t *align_address(uint8_t *ptr){
-    size_t diff = 8 - ((uintptr_t)ptr % 8);
-    if (diff != 8) {
-        ptr += diff;
-    }
-    return ptr;
-}
+
 
 void deserialize_bc_file(const char* filename) {
     FILE* file = fopen(filename, "rb");

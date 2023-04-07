@@ -156,6 +156,13 @@ int main(int argc, char *argv[]) {
 
             break;
         }
+        case ACTION_RUN: {
+            printf("Running the source file %s\n", source_file);
+            Ast *ast = get_ast();
+            bc_compile(ast);
+            bc_interpret();
+            break;
+        }
 
         default:
             fprintf(stderr, "Invalid action %d\n", action);

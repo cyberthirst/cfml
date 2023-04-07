@@ -16,13 +16,15 @@
  *  - this files defines the shared structures
  */
 
-void *const_pool = NULL;
+#define CONST_POOL_SZ (1024 * 1024 * 256)
+
+extern void *const_pool;
 //maps the index of the element in the constant pool
 //to the address of the element in the constant pool
-uint8_t **const_pool_map = NULL;
+extern uint8_t **const_pool_map;
 //number of constants in the const pool
-uint16_t const_pool_count = 0;
-Bc_Globals globals;
-//index to the constant poool
+extern uint16_t const_pool_count;
+extern Bc_Globals globals;
+//index to the constant pool
 //the bytecode at the address const_pool[entry_point] is the entry point of the program
-uint16_t entry_point = 0;
+extern uint16_t entry_point;

@@ -10,7 +10,6 @@
 
 #include "../../ast/ast_interpreter.h"
 
-#define CONST_POOL_SZ (1024 * 1024 * 256)
 
 
 

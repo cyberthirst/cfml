@@ -22,3 +22,5 @@ int16_t deserialize_i16(const uint8_t *data);
 uint32_t deserialize_u32(const uint8_t *data);
 
 bool truthiness(Value val);
+
+uint8_t *align_address(uint8_t *ptr);

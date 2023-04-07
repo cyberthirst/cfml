@@ -43,13 +43,6 @@ typedef enum {
 
 typedef uint8_t *Value;
 
-/*typedef struct Array Array;
-typedef struct Object Object;
-typedef struct Function Function;
-typedef struct Integer Integer;
-typedef struct Boolean Boolean;
-typedef struct Null Null;*/
-
 typedef struct {
     uint8_t kind;
     bool val;

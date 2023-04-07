@@ -673,7 +673,7 @@ void deserialize_bc_file(const char* filename) {
     // The pool has constant size, we don't initially know how big the objs actually are
     // If the pool is full we have to exit(1)
     //TODO implement the checks on cp size
-    const_pool = malloc(CONST_POOL_SZ);
+    const_pool = malloc(MAX_CONST_POOL_SZ);
 
     //we allocate + 1 because in the for-loop below we always assign the addr for i+1th element
     //this would be annoying to solve for the last elem

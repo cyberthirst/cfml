@@ -8,14 +8,13 @@
 #include <assert.h>
 
 #include "bc_interpreter.h"
-#include "../heap/heap.h"
-#include "../utils.h"
+#include "../../heap/heap.h"
+#include "../../utils.h"
+#include "../bc_shared_globals.h"
 
 //we can have max 1024 * 16 ptrs to the heap
 #define MAX_OPERANDS (1024 * 16)
 #define MAX_FRAMES (1024 * 16)
-
-
 
 typedef struct {
     uint8_t *ret_addr;
@@ -37,12 +36,6 @@ typedef struct {
 } Bc_Interpreter;
 
 //GLOBAL VARIABLES
-void *const_pool = NULL;
-uint8_t **const_pool_map = NULL;
-//number of constants in the const pool
-uint16_t const_pool_count = 0;
-Bc_Globals globals;
-uint16_t entry_point = 0;
 Bc_Interpreter *itp;
 Heap *heap;
 Value global_null;
@@ -663,7 +656,7 @@ uint8_t *align_address(uint8_t *ptr){
     return ptr;
 }
 
-void deserialize(const char* filename) {
+void deserialize_bc_file(const char* filename) {
     FILE* file = fopen(filename, "rb");
     if (!file) {
         printf("Error: Cannot open file %s\n", filename);

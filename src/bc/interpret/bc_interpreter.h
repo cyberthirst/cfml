@@ -8,14 +8,13 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "../ast/ast_interpreter.h"
+#include "../../ast/ast_interpreter.h"
 
 #define CONST_POOL_SZ (1024 * 1024 * 256)
 
-extern void *const_pool;
-extern uint8_t **const_pool_map;
 
-void deserialize(const char* filename);
+
+void deserialize_bc_file(const char* filename);
 
 void bc_interpret();
 

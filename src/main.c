@@ -7,8 +7,9 @@
 
 #include "parser.h"
 #include "ast/ast_interpreter.h"
-#include "bc/bc_interpreter.h"
+#include "bc/interpret/bc_interpreter.h"
 #include "arena.h"
+#include "bc/compile/bc_compiler.h"
 
 #define DEFAULT_HEAP_SIZE 4096
 #define DEFAULT_HEAP_LOG_FILE "heap_log.csv"
@@ -63,6 +64,28 @@ void usage(const char *progname) {
     exit(EXIT_FAILURE);
 }
 
+Ast * get_ast(){
+    Arena arena;
+    arena_init(&arena);
+
+    Str src = read_file(&arena, source_file);
+
+    if (src.str == NULL) {
+        arena_destroy(&arena);
+        exit(1);
+    }
+
+    Ast *ast = parse_src(&arena, src);
+
+    if (ast == NULL) {
+        fprintf(stderr, "Failed to parse source\n");
+        arena_destroy(&arena);
+        exit(1);
+    }
+    arena_destroy(&arena);
+    return ast;
+}
+
 int main(int argc, char *argv[]) {
     int optind = 1;
 
@@ -109,40 +132,28 @@ int main(int argc, char *argv[]) {
 
     switch (action) {
         case ACTION_AST_INTERPRET: {
-            Arena arena;
-	        arena_init(&arena);
 
-	        Str src = read_file(&arena, source_file);
-
-	        if (src.str == NULL) {
-		        arena_destroy(&arena);
-		        return 1;
-	        }
-
-	        Ast *ast = parse_src(&arena, src);
-
-	        if (ast == NULL) {
-		        fprintf(stderr, "Failed to parse source\n");
-		        arena_destroy(&arena);
-                return 1;
-	        }
+	        Ast *ast = get_ast();
 
             IState *state = init_interpreter();
 	        interpret(ast, state);
 
 	        free_interpreter(state);
 
-	        arena_destroy(&arena);
             break;
         }
         case ACTION_BC_INTERPRET: {
             //printf("Running the bc_interpreter on source file %s\n", source_file);
-            deserialize(source_file);
+            deserialize_bc_file(source_file);
             bc_interpret();
             break;
         }
         case ACTION_BC_COMPILE: {
             printf("Running the bc_compiler on source file %s\n", source_file);
+            Ast *ast = get_ast();
+
+            bc_compile(ast);
+
             break;
         }
 

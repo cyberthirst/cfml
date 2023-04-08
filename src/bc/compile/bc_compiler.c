@@ -8,6 +8,7 @@
 #include "../../types.h"
 #include "../bc_shared_globals.h"
 #include "../../utils.h"
+#include "../../utils/hash_map.h"
 
 #define FML_HEADER 0x464D4C0A
 //maximum functions that can be declared
@@ -62,15 +63,21 @@ uint16_t cpm_free_i = 0;
 //helper object to create bytecode for function
 //is later copied to the const pool
 CompiledFuns *cfuns;
+//map for the const pool
+//key is the value that should be inserted to cp converted to string, value is the index in the cp
+//struct hashmap *cpmap;
 //-------------------------GLOBALS-END-------------------------
+
+
 
 void compiler_init() {
     const_pool = malloc(sizeof(uint8_t) * MAX_CONST_POOL_SZ);
-    const_pool_map  = malloc(sizeof(void*) * (const_pool_count + 1));
+    const_pool_map  = malloc(sizeof(void*) * (MAX_CONST_POOL_SZ + 1));
     const_pool_map[cpm_free_i] = const_pool;
     cfuns = malloc(sizeof(CompiledFuns));
     cfuns->funs = malloc(sizeof(CompiledFun *) * MAX_FUN_NUM);
     cfuns->current = 0;
+    //cpmap = hashmap_new(sizeof(Str), 0, 0, 0, user_hash, user_compare, NULL, NULL);
 }
 
 void compiler_deconstruct() {
@@ -94,6 +101,27 @@ void const_pool_insert_str(Str str){
     bump_const_pool_free(sizeof(Bc_String) + pstr->len);
 }
 
+//TODO use the hashmap to check if the value is already in the const pool to avoid duplicates
+void const_pool_insert_null(){
+    Null *pnull = (Null *)const_pool_map[cpm_free_i];
+    pnull->kind = VK_NULL;
+    bump_const_pool_free(sizeof(Null));
+}
+
+void const_pool_insert_int(i32 i){
+    Integer *pint = (Integer *)const_pool_map[cpm_free_i];
+    pint->kind = VK_INTEGER;
+    pint->val = i;
+    bump_const_pool_free(sizeof(Integer));
+}
+
+void const_pool_insert_bool(bool b){
+    Boolean *pbool = (Boolean *)const_pool_map[cpm_free_i];
+    pbool->kind = VK_BOOLEAN;
+    pbool->val = b;
+    bump_const_pool_free(sizeof(Boolean));
+}
+
 void fun_insert_bytecode(const void *src, size_t sz) {
     CompiledFun *fun = cfuns->funs[cfuns->current];
     memcpy(fun->fun + fun->sz, src, sz);
@@ -110,11 +138,11 @@ void fun_insert_locals(uint16_t locals) {
     memcpy(fun->fun + FUN_LOCALS_INDEX, &locals, sizeof(locals));
 }
 
-
 void fun_alloc(uint8_t argc) {
     CompiledFun *fun = malloc(sizeof(CompiledFun));
     fun->fun = malloc(MAX_FUN_BODY_SZ);
     fun->sz = 0;
+    fun->locals = 0;
     cfuns->funs[cfuns->current] = fun;
     //insert the function opcode
     fun_insert_bytecode(&TAG_FUNCTION, sizeof(TAG_FUNCTION));
@@ -151,12 +179,23 @@ void fun_epilogue() {
 void compile(const Ast *ast) {
     switch(ast->kind) {
         case AST_NULL: {
+            fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
+            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+            const_pool_insert_null();
             return;
         }
         case AST_BOOLEAN: {
+            AstBoolean *ab = (AstBoolean *)ast;
+            fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
+            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+            const_pool_insert_bool(ab->value);
             return;
         }
         case AST_INTEGER: {
+            AstInteger *ai = (AstInteger *)ast;
+            fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
+            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+            const_pool_insert_int(ai->value);
             return;
         }
         case AST_ARRAY: {
@@ -217,6 +256,10 @@ void compile(const Ast *ast) {
             Push a pointer to a null object to stack.
              */
             AstPrint *prnt = (AstPrint *) ast;
+
+            for (size_t i = 0; i < prnt->argument_cnt; i++) {
+                compile(prnt->arguments[i]);
+            }
             //insert the print opcode
             fun_insert_bytecode(&BC_OP_PRINT, sizeof(BC_OP_PRINT));
             //insert the index of the format string to the const_pool
@@ -227,9 +270,6 @@ void compile(const Ast *ast) {
             uint8_t arg_cnt = prnt->argument_cnt;
             fun_insert_bytecode(&arg_cnt, sizeof(arg_cnt));
             const_pool_insert_str(prnt->format);
-            for (size_t i = 0; i < prnt->argument_cnt; i++) {
-                compile(prnt->arguments[i]);
-            }
             return;
         }
         case AST_BLOCK: {
@@ -251,6 +291,8 @@ void compile(const Ast *ast) {
             //the entry point is the index of the top-level function in the const_pool
             //we wrote the entry point to the const_pool in the fun_epilogue
             entry_point = cpm_free_i - 1;
+            //set the number of items inserted to the const_pool
+            const_pool_count = cpm_free_i;
             return;
         }
         default: {

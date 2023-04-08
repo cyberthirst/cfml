@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 
-#include "utils.h"
+#include "../utils.h"
 
 #define DEBUG 0
 #if DEBUG

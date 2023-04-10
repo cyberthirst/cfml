@@ -490,6 +490,29 @@ void compile(const Ast *ast) {
             return;
         }
         case AST_VARIABLE_ASSIGNMENT: {
+            AstVariableAssignment *(ava) = (AstVariableAssignment *) ast;
+            compile(ava->value);
+            //TODO: same as AST_VARIABLE_ACCESS maybe refactor
+            bool is_global = false;
+            Variable *var = get_name_ptr(ava->name, &is_global);
+            if (var == NULL) {
+                //we still need to insert the bytecode
+                //at the same time the missing index must be an index of a global variable
+                uint16_t tmp = 0;
+                fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(uint8_t));
+                //insert_to_fun_fixups uses the fn->sz as the offset
+                //the offset should be such that the index to const pool is later fixed-up
+                insert_to_fun_fixups(ava->name);
+                fun_insert_bytecode(&tmp, sizeof(uint16_t));
+            }
+            else if (is_global) {
+                fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(uint8_t));
+                fun_insert_bytecode(&var->index, sizeof(var->index));
+            }
+            else {
+                fun_insert_bytecode(&BC_OP_SET_LOCAL, sizeof(uint8_t));
+                fun_insert_bytecode(&var->index, sizeof(var->index));
+            }
             return;
         }
         case AST_INDEX_ACCESS: {

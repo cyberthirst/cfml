@@ -22,6 +22,7 @@
 #define MAX_ENVS 256
 #define MAX_VARS 256
 #define MAX_SCOPES 256
+#define MAX_FIXUPS_NUM 64
 
 
 const uint8_t BC_OP_DROP = 0x00;
@@ -68,6 +69,25 @@ typedef struct {
     Value ret_val;
 } Environment;
 
+//we have 1 fixup for each missing symbol
+typedef struct {
+    //which function need to be fixed
+    uint16_t cp_index;
+    //at which offset the fixup has to occur
+    uint32_t offset;
+    //name of variable that was missing at the time of compilation of the given function
+    Str name;
+} Fixup;
+
+
+//each function has its own all_fixups
+typedef struct {
+    //array of all_fixups
+    Fixup *fixups;
+    //number of all_fixups
+    uint32_t cnt;
+} Fixups;
+
 typedef struct {
     uint8_t *fun;
     //size of the function in bytes
@@ -80,6 +100,7 @@ typedef struct {
     uint8_t current_var_i;
     //scopes
     Environment *env;
+    Fixups fun_fixups;
 } Fun;
 
 typedef struct {
@@ -87,7 +108,6 @@ typedef struct {
     int current;
     Fun **funs;
 } CompiledFuns;
-
 
 //---------------------------GLOBALS---------------------------
 //const_pool_map index, indexes the first aligned free space in the const_pool
@@ -98,8 +118,8 @@ CompiledFuns *cfuns;
 //map for the const pool
 //key is the value that should be inserted to cp converted to string, value is the index in the cp
 //struct hashmap *cpmap;
+Fixups *all_fixups;
 //-------------------------GLOBALS-END-------------------------
-
 
 
 void compiler_init() {
@@ -108,6 +128,8 @@ void compiler_init() {
     const_pool_map[cpm_free_i] = const_pool;
     cfuns = malloc(sizeof(CompiledFuns));
     cfuns->funs = malloc(sizeof(Fun *) * MAX_FUN_NUM);
+    all_fixups = malloc(sizeof(Fixups) * MAX_FUN_NUM);
+    all_fixups->cnt = 0;
     //we alloc function and there we increment current
     //we want the entry-point to be stored at index 0
     //initializing this to -1 is the easiest way how to achieve this
@@ -181,18 +203,6 @@ void const_pool_insert_fun(size_t index) {
     Fun *fun = cfuns->funs[index];
     memcpy(const_pool_map[cpm_free_i], fun->fun, fun->sz);
     bump_const_pool_free(fun->sz);
-    free(fun->fun);
-}
-
-void fun_epilogue() {
-    fun_insert_locals(cfuns->funs[cfuns->current]->locals);
-    fun_insert_length(cfuns->funs[cfuns->current]->sz);
-    //insert the return opcode, every func, even the entry point must end with a return
-    fun_insert_bytecode(&BC_OP_RETURN, sizeof(BC_OP_RETURN));
-    //copy the top-level function to the const_pool
-    const_pool_insert_fun(cfuns->current);
-    //it's ok to overflow for the entry point (we won't compile anything after finishing the compilation of entry point)
-    --cfuns->current;
 }
 
 void enter_block() {
@@ -286,10 +296,12 @@ void add_name_to_scope(Str name, uint16_t index) {
     }
 }
 
-void fun_alloc(uint8_t paramc, AstFunction *af) {
+void fun_alloc(uint8_t paramc, AstFunction *af, bool defining) {
     Fun *fun = malloc(sizeof(Fun));
     fun->fun = malloc(MAX_FUN_BODY_SZ);
     fun->env = malloc(sizeof(Environment));
+    fun->fun_fixups.fixups = malloc(sizeof(Fixup) * MAX_FIXUPS_NUM);
+    fun->fun_fixups.cnt = 0;
     fun->sz = 0;
     fun->locals = 0;
     fun->current_var_i = 0;
@@ -298,16 +310,6 @@ void fun_alloc(uint8_t paramc, AstFunction *af) {
     cfuns->funs[cfuns->current] = fun;
     //at the 0th index is the "this" variable
     add_name_to_scope(STR("this"), 0);
-    //insert the function opcode
-    fun_insert_bytecode(&TAG_FUNCTION, sizeof(TAG_FUNCTION));
-    //insert the number of arguments
-    fun_insert_bytecode(&paramc, sizeof(paramc));
-    //skip locals and length
-    // - locals: the number of local variables defined in this function, represented by a 16b unsigned integer
-    //   (this number  does not include the number of parameters nor the hidden this parameter).
-    // - length: the total length of the bytecode vector (the total count of bytes in the function’s body),
-    //   4B unsigned integer
-    fun->sz += sizeof(uint16_t) + sizeof(uint32_t);
 
     //for the entry point function af is NULL
     if (af != NULL) {
@@ -317,6 +319,75 @@ void fun_alloc(uint8_t paramc, AstFunction *af) {
             add_name_to_scope(af->parameters[i], fun->current_var_i);
         }
     }
+    //if the function is already defined, we don't need to insert anything to its bytecode
+    //TODO probably always called with defining == true? -> remove the parameter
+    if (defining) {
+        //insert the function opcode
+        fun_insert_bytecode(&TAG_FUNCTION, sizeof(TAG_FUNCTION));
+        //insert the number of arguments
+        //increase paramc by 1 because of the first hidden param "this"
+        paramc += 1;
+        fun_insert_bytecode(&paramc, sizeof(paramc));
+        //skip locals and length
+        // - locals: the number of local variables defined in this function, represented by a 16b unsigned integer
+        //   (this number  does not include the number of parameters nor the hidden this parameter).
+        // - length: the total length of the bytecode vector (the total count of bytes in the function’s body),
+        //   4B unsigned integer
+        fun->sz += sizeof(uint16_t) + sizeof(uint32_t);
+    }
+}
+
+void fun_epilogue() {
+    Fun *fun = cfuns->funs[cfuns->current];
+    fun_insert_locals(fun->locals);
+    fun_insert_length(fun->sz);
+    //insert the return opcode, every func, even the entry point must end with a return
+    fun_insert_bytecode(&BC_OP_RETURN, sizeof(BC_OP_RETURN));
+    //copy the top-level function to the const_pool
+    //printf("inserting fun to const pool, index: %d\n", cpm_free_i);
+    //printf("%.*s", (int)fun.len, str.str);
+    const_pool_insert_fun(cfuns->current);
+    free(fun->fun);
+    free(fun->env);
+    //it's ok to overflow for the entry point (we won't compile anything after finishing the compilation of entry point)
+    --cfuns->current;
+    //update the const pool index in the all_fixups, we now the index of the currently compiled function
+    for (size_t i = 0; i < fun->fun_fixups.cnt; ++i) {
+        //we need to subtract 1 because the const pool index just got incremented in the const_pool_insert_fun
+        fun->fun_fixups.fixups[i].cp_index = cpm_free_i - 1;
+    }
+    assert(all_fixups->cnt + fun->fun_fixups.cnt < MAX_FIXUPS_NUM);
+    //copy the all_fixups to the global variable all_fixups
+    all_fixups[all_fixups->cnt++] = fun->fun_fixups;
+}
+
+//function gets called when we define new global variable
+//this variable is potentially missing in some of the already compiled functions
+//we will go through the all_fixups compare the name and fixup the index if match is found
+void fixup(Str name, uint16_t fixup_index) {
+    //go through all the fixups
+    for (size_t i = 0; i < all_fixups->cnt; ++i) {
+        //go through all the fixups in the function i
+        for (size_t j = 0; j < all_fixups[i].cnt; ++j) {
+            //TODO: would be nice to remove the fixed indexes..
+            if (str_cmp(name, all_fixups[i].fixups[j].name) == 0) {
+                //we found the name in the all_fixups, so we need to fixup the index
+                uint16_t fun_index = all_fixups[i].fixups[j].cp_index;
+                uint8_t *fun_bc = const_pool_map[fun_index];
+                fun_bc[all_fixups[i].fixups[j].offset] = fixup_index;
+            }
+        }
+    }
+
+}
+
+void insert_to_fun_fixups(Str name) {
+    Fun *fun = cfuns->funs[cfuns->current];
+    fun->fun_fixups.fixups[fun->fun_fixups.cnt].name = name;
+    fun->fun_fixups.fixups[fun->fun_fixups.cnt].offset = fun->sz;
+    fun->fun_fixups.cnt++;
+    //we don't know the index in the const pool in which the current function will be stored
+    //thus we leave cp_index unset
 }
 
 void compile(const Ast *ast) {
@@ -351,11 +422,17 @@ void compile(const Ast *ast) {
         }
         case AST_FUNCTION: {
             AstFunction *af = (AstFunction *)ast;
-            fun_alloc(af->parameter_cnt, af);
+            fun_alloc(af->parameter_cnt, af, true);
             compile(af->body);
             fun_epilogue();
+            //important to insert the bytecode after the epilogue, because otherwise we would insert the bytecode
+            //into the body of the function which we're currently compiling
             fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
-            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+            //we did fun_epilogue which copies the function to the constant pool and also increment the free index
+            //thus we need to decrement it by  1
+            //we also need to insert "after" the epilogue, otherwise we would encounter the problem described above
+            uint16_t tmp_cpm_free_i = cpm_free_i - 1;
+            fun_insert_bytecode(&tmp_cpm_free_i, sizeof(cpm_free_i));
             return;
         }
         case AST_DEFINITION: {
@@ -369,6 +446,10 @@ void compile(const Ast *ast) {
             if (cfuns->current == 0 && cfuns->funs[0]->env->scope_cnt == 0) { //add to global environment
                 fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(BC_OP_SET_GLOBAL));
                 fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+                //global variable can fixup some missing indexes in the already compiled functions
+                //the problem is that we don't know beforehand at which index in the constant pool the function will
+                //end up, however upon definition of that var we already know that index - and it is cpm_free_i
+                fixup(ad->name, cpm_free_i);
                 //the global variables are accessed via the index to const pool, where their name is stored
                 add_name_to_scope(ad->name, cpm_free_i);
                 const_pool_insert_str(ad->name);
@@ -389,10 +470,16 @@ void compile(const Ast *ast) {
             bool is_global = false;
             Variable *var = get_name_ptr(ava->name , &is_global);
             if (var == NULL) {
-                printf("Variable not found, exiting.\n");
-                exit(1);
+                //we still need to insert the bytecode
+                //at the same time the missing index must be an index of a global variable
+                uint16_t tmp = 0;
+                fun_insert_bytecode(&BC_OP_GET_GLOBAL, sizeof(BC_OP_GET_GLOBAL));
+                //insert_to_fun_fixups uses the fn->sz as the offset
+                //the offset should be such that the index to const pool is later fixed-up
+                insert_to_fun_fixups(ava->name);
+                fun_insert_bytecode(&tmp, sizeof(uint16_t));
             }
-            if (is_global) {
+            else if (is_global) {
                 fun_insert_bytecode(&BC_OP_GET_GLOBAL, sizeof(BC_OP_GET_GLOBAL));
                 fun_insert_bytecode(&var->index, sizeof(var->index));
             }
@@ -418,6 +505,19 @@ void compile(const Ast *ast) {
             return;
         }
         case AST_FUNCTION_CALL: {
+            AstFunctionCall *afc = (AstFunctionCall *) ast;
+            /*AstVariableAccess *ava = (AstVariableAccess *) afc->function;
+            Variable *var = get_name_ptr(ava->name, NULL);
+            if (var == NULL) {
+                compile()
+            }*/
+            compile(afc->function);
+            for (size_t i = 0; i < afc->argument_cnt; i++) {
+                compile(afc->arguments[i]);
+            }
+            fun_insert_bytecode(&BC_OP_CALL_FUNCTION, sizeof(BC_OP_CALL_FUNCTION));
+            uint8_t argument_cnt = afc->argument_cnt;
+            fun_insert_bytecode(&argument_cnt, sizeof(argument_cnt));
             return;
         }
         case AST_METHOD_CALL: {
@@ -463,8 +563,7 @@ void compile(const Ast *ast) {
         }
         case AST_TOP: {
             AstTop *top = (AstTop *)ast;
-            //allocate space for the top-level function, entry point has 1 implicit parameter - this, set to null
-            fun_alloc(1, NULL);
+            fun_alloc(0, NULL, true);
             //we have to treat the entry point specially, the fun_alloc function increments cfuns->current
             //which is the correct thing to do, however for the entry-point we want to start at index 0
             //cfuns->current = 0;

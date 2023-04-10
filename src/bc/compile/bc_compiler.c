@@ -84,7 +84,7 @@ typedef struct {
 
 typedef struct {
     //index of the current function
-    size_t current;
+    int current;
     Fun **funs;
 } CompiledFuns;
 
@@ -108,7 +108,10 @@ void compiler_init() {
     const_pool_map[cpm_free_i] = const_pool;
     cfuns = malloc(sizeof(CompiledFuns));
     cfuns->funs = malloc(sizeof(Fun *) * MAX_FUN_NUM);
-    cfuns->current = 0;
+    //we alloc function and there we increment current
+    //we want the entry-point to be stored at index 0
+    //initializing this to -1 is the easiest way how to achieve this
+    cfuns->current = -1;
     globals.indexes = malloc(sizeof(Value) * MAX_GLOBALS_NUM);
     globals.count = 0;
     //cpmap = hashmap_new(sizeof(Str), 0, 0, 0, user_hash, user_compare, NULL, NULL);
@@ -172,29 +175,8 @@ void fun_insert_locals(uint16_t locals) {
     memcpy(fun->fun + FUN_LOCALS_INDEX, &locals, sizeof(locals));
 }
 
-void fun_alloc(uint8_t argc) {
-    Fun *fun = malloc(sizeof(Fun));
-    fun->fun = malloc(MAX_FUN_BODY_SZ);
-    fun->sz = 0;
-    fun->locals = 0;
-    //at the 0th index is the "this" variable
-    fun->current_var_i = 1;
-    fun->env = malloc(sizeof(Environment));
-    cfuns->funs[cfuns->current] = fun;
-    //insert the function opcode
-    fun_insert_bytecode(&TAG_FUNCTION, sizeof(TAG_FUNCTION));
-    //insert the number of arguments
-    fun_insert_bytecode(&argc, sizeof(argc));
-    //skip locals and length
-    // - locals: the number of local variables defined in this function, represented by a 16b unsigned integer
-    //   (this number  does not include the number of parameters nor the hidden this parameter).
-    // - length: the total length of the bytecode vector (the total count of bytes in the function’s body),
-    //   4B unsigned integer
-    fun->sz += sizeof(uint16_t) + sizeof(uint32_t);
-}
-
 //copies the bytecode of the function at the given function index to the const pool
-void cpy_fun_to_cp(size_t index) {
+void const_pool_insert_fun(size_t index) {
     assert(index <= cfuns->current);
     Fun *fun = cfuns->funs[index];
     memcpy(const_pool_map[cpm_free_i], fun->fun, fun->sz);
@@ -208,7 +190,7 @@ void fun_epilogue() {
     //insert the return opcode, every func, even the entry point must end with a return
     fun_insert_bytecode(&BC_OP_RETURN, sizeof(BC_OP_RETURN));
     //copy the top-level function to the const_pool
-    cpy_fun_to_cp(cfuns->current);
+    const_pool_insert_fun(cfuns->current);
     //it's ok to overflow for the entry point (we won't compile anything after finishing the compilation of entry point)
     --cfuns->current;
 }
@@ -304,9 +286,44 @@ void add_name_to_scope(Str name, uint16_t index) {
     }
 }
 
+void fun_alloc(uint8_t paramc, AstFunction *af) {
+    Fun *fun = malloc(sizeof(Fun));
+    fun->fun = malloc(MAX_FUN_BODY_SZ);
+    fun->env = malloc(sizeof(Environment));
+    fun->sz = 0;
+    fun->locals = 0;
+    fun->current_var_i = 0;
+    //cfuns->current is initialized in the init function to -1, so the entry-point is stored at index 0
+    cfuns->current++;
+    cfuns->funs[cfuns->current] = fun;
+    //at the 0th index is the "this" variable
+    add_name_to_scope(STR("this"), 0);
+    //insert the function opcode
+    fun_insert_bytecode(&TAG_FUNCTION, sizeof(TAG_FUNCTION));
+    //insert the number of arguments
+    fun_insert_bytecode(&paramc, sizeof(paramc));
+    //skip locals and length
+    // - locals: the number of local variables defined in this function, represented by a 16b unsigned integer
+    //   (this number  does not include the number of parameters nor the hidden this parameter).
+    // - length: the total length of the bytecode vector (the total count of bytes in the function’s body),
+    //   4B unsigned integer
+    fun->sz += sizeof(uint16_t) + sizeof(uint32_t);
+
+    //for the entry point function af is NULL
+    if (af != NULL) {
+        for (size_t i = 0; i < af->parameter_cnt; ++i) {
+            //add the parameters as local variables
+            //curent_var_i is  for i == 0 set to 1, so we don't overwrite the "this" variable
+            add_name_to_scope(af->parameters[i], fun->current_var_i);
+        }
+    }
+}
+
 void compile(const Ast *ast) {
     switch(ast->kind) {
         case AST_NULL: {
+            //TODO: those 2 lines are repeated multiple times for all constants
+            //      move it to a function/extend the existing one
             fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
             fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
             const_pool_insert_null();
@@ -333,6 +350,12 @@ void compile(const Ast *ast) {
             return;
         }
         case AST_FUNCTION: {
+            AstFunction *af = (AstFunction *)ast;
+            fun_alloc(af->parameter_cnt, af);
+            compile(af->body);
+            fun_epilogue();
+            fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
+            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
             return;
         }
         case AST_DEFINITION: {
@@ -343,7 +366,6 @@ void compile(const Ast *ast) {
             //if the definition is in the entry point, we need to add it to the global environment if it's
             //not inside any block
             //if it is inside a block, we need to add it as a local variable
-
             if (cfuns->current == 0 && cfuns->funs[0]->env->scope_cnt == 0) { //add to global environment
                 fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(BC_OP_SET_GLOBAL));
                 fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
@@ -353,7 +375,9 @@ void compile(const Ast *ast) {
             }
             else {//add to local environment
                 fun_insert_bytecode(&BC_OP_SET_LOCAL, sizeof(BC_OP_SET_LOCAL));
-                fun_insert_bytecode(&cfuns->funs[cfuns->current]->current_var_i, sizeof(cfuns->funs[cfuns->current]->current_var_i));
+                fun_insert_bytecode(&cfuns->funs[cfuns->current]->current_var_i,
+                                    sizeof(cfuns->funs[cfuns->current]->current_var_i));
+                //TODO ugly, maybe current_var_i could be managed by the fun itself?
                 add_name_to_scope(ad->name, cfuns->funs[cfuns->current]->current_var_i);
             }
             //for some reason the operands are only peeked, not popped
@@ -368,7 +392,6 @@ void compile(const Ast *ast) {
                 printf("Variable not found, exiting.\n");
                 exit(1);
             }
-            printf("variable at index %d\n", var->index);
             if (is_global) {
                 fun_insert_bytecode(&BC_OP_GET_GLOBAL, sizeof(BC_OP_GET_GLOBAL));
                 fun_insert_bytecode(&var->index, sizeof(var->index));
@@ -441,8 +464,10 @@ void compile(const Ast *ast) {
         case AST_TOP: {
             AstTop *top = (AstTop *)ast;
             //allocate space for the top-level function, entry point has 1 implicit parameter - this, set to null
-            fun_alloc(1);
-            cfuns->current = 0;
+            fun_alloc(1, NULL);
+            //we have to treat the entry point specially, the fun_alloc function increments cfuns->current
+            //which is the correct thing to do, however for the entry-point we want to start at index 0
+            //cfuns->current = 0;
 
             for (size_t i = 0; i < top->expression_cnt; i++) {
                 compile(top->expressions[i]);

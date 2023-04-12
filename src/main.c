@@ -64,25 +64,23 @@ void usage(const char *progname) {
     exit(EXIT_FAILURE);
 }
 
-Ast * get_ast(){
-    Arena arena;
-    arena_init(&arena);
+Ast * get_ast(Arena *arena){
+ 
 
-    Str src = read_file(&arena, source_file);
+    Str src = read_file(arena, source_file);
 
     if (src.str == NULL) {
-        arena_destroy(&arena);
+        arena_destroy(arena);
         exit(1);
     }
 
-    Ast *ast = parse_src(&arena, src);
+    Ast *ast = parse_src(arena, src);
 
     if (ast == NULL) {
         fprintf(stderr, "Failed to parse source\n");
-        arena_destroy(&arena);
+        arena_destroy(arena);
         exit(1);
     }
-    arena_destroy(&arena);
     return ast;
 }
 
@@ -130,10 +128,13 @@ int main(int argc, char *argv[]) {
     }
     source_file = argv[optind];
 
+    Arena arena;
+    arena_init(&arena);
+
     switch (action) {
         case ACTION_AST_INTERPRET: {
 
-	        Ast *ast = get_ast();
+	        Ast *ast = get_ast(&arena);
 
             IState *state = init_interpreter();
 	        interpret(ast, state);
@@ -150,7 +151,7 @@ int main(int argc, char *argv[]) {
         }
         case ACTION_BC_COMPILE: {
             printf("Running the bc_compiler on source file %s\n", source_file);
-            Ast *ast = get_ast();
+	        Ast *ast = get_ast(&arena);
 
             bc_compile(ast);
 
@@ -158,7 +159,7 @@ int main(int argc, char *argv[]) {
         }
         case ACTION_RUN: {
             printf("Running the source file %s\n", source_file);
-            Ast *ast = get_ast();
+	        Ast *ast = get_ast(&arena);
             bc_compile(ast);
             bc_interpret();
             break;
@@ -168,6 +169,6 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Invalid action %d\n", action);
             exit(EXIT_FAILURE);
     }
-
+    arena_destroy(&arena);
     return EXIT_SUCCESS;
 }

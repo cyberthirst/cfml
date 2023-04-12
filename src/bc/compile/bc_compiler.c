@@ -2,26 +2,25 @@
 // Created by Mirek Škrabal on 05.04.2023.
 //
 
+#include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
-#include "bc_compiler.h"
 #include "../../types.h"
 #include "../bc_shared_globals.h"
 #include "../../utils.h"
-#include "../../utils/hash_map.h"
 
 #define FML_HEADER 0x464D4C0A
 //maximum functions that can be declared
-#define MAX_FUN_NUM 1024
+#define MAX_FUN_NUM 64 
 //maximum size of a function body in bytes
-#define MAX_FUN_BODY_SZ (1024 * 1024)
-#define MAX_VARS_NUM 256
-#define MAX_GLOBALS_NUM 1024
+#define MAX_FUN_BODY_SZ (1024 * 32)
+#define MAX_VARS_NUM 64
+#define MAX_GLOBALS_NUM 64
 #define FUN_LOCALS_INDEX 2
 #define FUN_LENGTH_INDEX 4
-#define MAX_ENVS 256
-#define MAX_VARS 256
-#define MAX_SCOPES 256
+#define MAX_ENVS 128
+#define MAX_VARS 128
+#define MAX_SCOPES 128
 #define MAX_FIXUPS_NUM 64
 
 
@@ -65,7 +64,7 @@ typedef struct {
 typedef struct {
     //stack of scopes
     Scope scopes[MAX_SCOPES];
-    size_t scope_cnt;
+    uint16_t scope_cnt;
     Value ret_val;
 } Environment;
 
@@ -212,7 +211,8 @@ void const_pool_insert_fun(size_t index) {
 
 void enter_block() {
     Fun *fun = cfuns->funs[cfuns->current];
-    ++fun->env->scope_cnt;
+    fun->env->scope_cnt++;
+    fun->env->scopes[fun->env->scope_cnt].var_cnt = 0;
 }
 
 void leave_block() {
@@ -223,7 +223,7 @@ void leave_block() {
     //reset the var_cnt for the scope
     fun->env->scopes[fun->env->scope_cnt].var_cnt = 0;
     //leaving block -> decrement scope_cnt
-    --fun->env->scope_cnt;
+    fun->env->scope_cnt++;
 }
 
 Variable *find_name_in_env(Str name, Environment *env, size_t scope_cnt, bool *found_top_level) {
@@ -305,6 +305,8 @@ void fun_alloc(uint8_t paramc, AstFunction *af, bool defining) {
     Fun *fun = malloc(sizeof(Fun));
     fun->fun = malloc(MAX_FUN_BODY_SZ);
     fun->env = malloc(sizeof(Environment));
+    fun->env->scope_cnt = 0;
+    fun->env->scopes[fun->env->scope_cnt].var_cnt = 0;
     fun->fun_fixups.fixups = malloc(sizeof(Fixup) * MAX_FIXUPS_NUM);
     fun->fun_fixups.cnt = 0;
     fun->sz = 0;
@@ -396,7 +398,7 @@ void insert_to_fun_fixups(Str name) {
 }
 
 
-void compile(const Ast *ast) {
+void compile(Ast *ast) {
     switch(ast->kind) {
         case AST_NULL: {
             //TODO: those 2 lines are repeated multiple times for all constants
@@ -654,7 +656,7 @@ void compile(const Ast *ast) {
 
 }
 
-void bc_compile(const Ast *ast) {
+void bc_compile(Ast *ast) {
     compiler_init();
     compile(ast);
     compiler_deconstruct();

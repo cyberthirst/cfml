@@ -16,7 +16,7 @@
  *  - this files defines the shared structures
  */
 
-#define MAX_CONST_POOL_SZ (1024 * 1024 * 256)
+#define MAX_CONST_POOL_SZ (1024 * 1024)
 
 extern void *const_pool;
 //maps the index of the element in the constant pool

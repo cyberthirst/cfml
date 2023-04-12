@@ -187,6 +187,11 @@ void fun_insert_bytecode(const void *src, size_t sz) {
     fun->sz += sz;
 }
 
+void fun_fixup_bytecode(const void *src, size_t sz, uint32_t offset) {
+    Fun *fun = cfuns->funs[cfuns->current];
+    memcpy(fun->fun + offset, src, sz);
+}
+
 void fun_insert_length(uint32_t length) {
     Fun *fun = cfuns->funs[cfuns->current];
     memcpy(fun->fun + FUN_LENGTH_INDEX, &length, sizeof(length));
@@ -390,6 +395,7 @@ void insert_to_fun_fixups(Str name) {
     //thus we leave cp_index unset
 }
 
+
 void compile(const Ast *ast) {
     switch(ast->kind) {
         case AST_NULL: {
@@ -547,6 +553,37 @@ void compile(const Ast *ast) {
             return;
         }
         case AST_CONDITIONAL: {
+            AstConditional *ac = (AstConditional *) ast;
+            compile(ac->condition);
+            fun_insert_bytecode(&BC_OP_BRANCH, sizeof(BC_OP_BRANCH));
+            //the 2B offset that is associated with the jmp instructions
+            //we want to branch past the jump instruction and it's offset -> 3 bytes
+            int16_t offset = 3;
+            fun_insert_bytecode(&offset, sizeof(offset));
+            //we want to jump to the end of the consequent
+            fun_insert_bytecode(&BC_OP_JUMP, sizeof(BC_OP_JUMP));
+            //we need to store the current position so we can fixup the jump instruction
+            uint32_t to_else_jump_offset = cfuns->funs[cfuns->current]->sz;
+            //we store offset, but thats only some temporary garbage
+            fun_insert_bytecode(&offset, sizeof(offset));
+            enter_block();
+            compile(ac->consequent);
+            leave_block();
+            //we add 1 because we want to jump past the jump instruction
+            //the jmp instruction is 3B, also the offset is relative to next instruction
+            //we stored the sz before storing the offset, thus we only add 1, not 3
+            offset = cfuns->funs[cfuns->current]->sz - to_else_jump_offset + 1;
+            fun_fixup_bytecode(&offset, sizeof(offset), to_else_jump_offset);
+            fun_insert_bytecode(&BC_OP_JUMP, sizeof(BC_OP_JUMP));
+            uint32_t to_end_jump_offset = cfuns->funs[cfuns->current]->sz;
+            fun_insert_bytecode(&offset, sizeof(offset));
+            enter_block();
+            compile(ac->alternative);
+            leave_block();
+            //we subtract 2 because the offset is relative to the next instruction
+            //and again we stored the sz before storing the offset
+            offset = cfuns->funs[cfuns->current]->sz - to_end_jump_offset - 2;
+            fun_fixup_bytecode(&offset, sizeof(offset), to_end_jump_offset);
             return;
         }
         case AST_LOOP: {

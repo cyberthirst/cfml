@@ -397,19 +397,22 @@ void insert_to_fun_fixups(Str name) {
     //thus we leave cp_index unset
 }
 
+void insert_null() {
+    fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
+    fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+    const_pool_insert_null();
+}
 
 void compile(Ast *ast) {
     switch(ast->kind) {
         case AST_NULL: {
-            //TODO: those 2 lines are repeated multiple times for all constants
-            //      move it to a function/extend the existing one
-            fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
-            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
-            const_pool_insert_null();
+            insert_null();
             return;
         }
         case AST_BOOLEAN: {
             AstBoolean *ab = (AstBoolean *)ast;
+            //TODO: those 2 lines are repeated multiple times for all constants
+            //      move it to a function/extend the existing one
             fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
             fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
             const_pool_insert_bool(ab->value);
@@ -589,6 +592,41 @@ void compile(Ast *ast) {
             return;
         }
         case AST_LOOP: {
+            AstLoop *al = (AstLoop *) ast;
+            //if the loop runs 0 times, it must eval to null
+            insert_null();
+            uint32_t condition_offset = cfuns->funs[cfuns->current]->sz;
+            compile(al->condition);
+            //we have the following bytecode:
+            //  null
+            //  condition
+            //  branch 3
+            //  jump to after_body <- needs fixup
+            //  body
+            //  jump to condition
+            //  after body
+            fun_insert_bytecode(&BC_OP_BRANCH, sizeof(BC_OP_BRANCH));
+            int16_t offset = 3;
+            //branch past the jump instruction and it's offset
+            fun_insert_bytecode(&offset, sizeof(offset));
+            fun_insert_bytecode(&BC_OP_JUMP, sizeof(BC_OP_JUMP));
+            uint32_t jump_to_after_body_offset = cfuns->funs[cfuns->current]->sz;
+            //this offset is temporary, we will fix it later
+            fun_insert_bytecode(&offset, sizeof(offset));
+            //will be used to calculate body size, which is needed to calculate the jump_after_body offset
+            uint32_t before_body_offset = cfuns->funs[cfuns->current]->sz;
+            //first iter of the loop will drop the null
+            fun_insert_bytecode(&BC_OP_DROP, sizeof(BC_OP_DROP));
+            compile(al->body);
+            //jump to the condition
+            //jump is relative to the next opcode, so we must subtract the size of jump, which is 3B
+            offset = (condition_offset - cfuns->funs[cfuns->current]->sz) - 3;// - 1;
+            fun_insert_bytecode(&BC_OP_JUMP, sizeof(BC_OP_JUMP));
+            fun_insert_bytecode(&offset, sizeof(offset));
+            //fix the after body offset for the after body jump
+            uint32_t  after_body_offset = cfuns->funs[cfuns->current]->sz;
+            offset = after_body_offset - before_body_offset;
+            fun_fixup_bytecode(&offset, sizeof(offset), jump_to_after_body_offset);
             return;
         }
         case AST_PRINT: {

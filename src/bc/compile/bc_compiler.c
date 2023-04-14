@@ -76,6 +76,8 @@ typedef struct {
     uint32_t offset;
     //name of variable that was missing at the time of compilation of the given function
     Str name;
+    //indicates whether it was already fixed, this flag is used in the final_fixup()
+    bool fixed;
 } Fixup;
 
 
@@ -383,16 +385,38 @@ void fixup(Str name, uint16_t fixup_index) {
     for (size_t i = 0; i < all_fixups->cnt; ++i) {
         //go through all the fixups in the function i
         for (size_t j = 0; j < all_fixups[i].cnt; ++j) {
-            //TODO: would be nice to remove the fixed indexes..
+            //TODO: would be nice to remove the fixed indexes.. (maybe linked list?)
             if (str_cmp(name, all_fixups[i].fixups[j].name) == 0) {
                 //we found the name in the all_fixups, so we need to fixup the index
                 uint16_t fun_index = all_fixups[i].fixups[j].cp_index;
                 uint8_t *fun_bc = const_pool_map[fun_index];
                 fun_bc[all_fixups[i].fixups[j].offset] = fixup_index;
+                all_fixups[i].fixups[j].fixed = true;
             }
         }
     }
+}
 
+//some missing indexes might not be fixed (this can happen if the global variable is defined
+// only by using = and not let) those indexes will be fixed in the final_fixup
+void final_fixup() {
+    //go through all the fixups
+    for (size_t i = 0; i < all_fixups->cnt; ++i) {
+        //go through all the fixups in the function i
+        for (size_t j = 0; j < all_fixups[i].cnt; ++j) {
+            //those indexes that are not yet fixed will have cp_index == 0
+            if (all_fixups[i].fixups[j].fixed == false) {
+                //we need to insert the missing name to the const_pool
+                //so the current cpm_free_i will be the index of the name in the const_pool
+                fixup(all_fixups[i].fixups[j].name, cpm_free_i);
+                //insert the index to globals
+                //ie here we finally define the global variable
+                globals.indexes[globals.count] = cpm_free_i;
+                globals.count++;;
+                const_pool_insert_str(all_fixups[i].fixups[j].name);
+            }
+        }
+    }
 }
 
 void insert_to_fun_fixups(Str name) {
@@ -669,7 +693,9 @@ void compile(Ast *ast) {
             uint32_t before_body_offset = cfuns->funs[cfuns->current]->sz;
             //first iter of the loop will drop the null
             fun_insert_bytecode(&BC_OP_DROP, sizeof(BC_OP_DROP));
+            enter_block();
             compile(al->body);
+            leave_block();
             //jump to the condition
             //jump is relative to the next opcode, so we must subtract the size of jump, which is 3B
             offset = (condition_offset - cfuns->funs[cfuns->current]->sz) - 3;// - 1;
@@ -735,6 +761,7 @@ void compile(Ast *ast) {
             entry_point = cpm_free_i - 1;
             //set the number of items inserted to the const_pool
             const_pool_count = cpm_free_i;
+            final_fixup();
             return;
         }
         default: {

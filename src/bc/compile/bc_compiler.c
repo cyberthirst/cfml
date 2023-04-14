@@ -96,9 +96,9 @@ typedef struct {
     //max number of local variables
     //we use the term "max" because for example after leaving a scope the vars cease to exist, but we
     //still need to be able to store them when we are in the scope
-    uint8_t locals;
+    uint16_t locals;
     //index of the current variable in the vars array
-    uint8_t current_var_i;
+    uint16_t current_var_i;
     //scopes
     Environment *env;
     Fixups fun_fixups;
@@ -408,6 +408,7 @@ void final_fixup() {
             if (all_fixups[i].fixups[j].fixed == false) {
                 //we need to insert the missing name to the const_pool
                 //so the current cpm_free_i will be the index of the name in the const_pool
+                //printf("fixing up: %.*s with index: %d\n", (int)all_fixups[i].fixups[j].name.len, all_fixups[i].fixups[j].name.str, cpm_free_i);
                 fixup(all_fixups[i].fixups[j].name, cpm_free_i);
                 //insert the index to globals
                 //ie here we finally define the global variable
@@ -520,11 +521,10 @@ void compile(Ast *ast) {
                 const_pool_insert_str(ad->name);
             }
             else {//add to local environment
+                uint16_t cvar = cfuns->funs[cfuns->current]->current_var_i;
                 fun_insert_bytecode(&BC_OP_SET_LOCAL, sizeof(BC_OP_SET_LOCAL));
-                fun_insert_bytecode(&cfuns->funs[cfuns->current]->current_var_i,
-                                    sizeof(cfuns->funs[cfuns->current]->current_var_i));
-                //TODO ugly, maybe current_var_i could be managed by the fun itself?
-                add_name_to_scope(ad->name, cfuns->funs[cfuns->current]->current_var_i);
+                fun_insert_bytecode(&cvar, sizeof(cvar));
+                add_name_to_scope(ad->name, cvar);
             }
             //for some reason the operands are only peeked, not popped
             //fun_insert_bytecode(&BC_OP_DROP, sizeof(BC_OP_DROP));
@@ -542,7 +542,7 @@ void compile(Ast *ast) {
                 //insert_to_fun_fixups uses the fn->sz as the offset
                 //the offset should be such that the index to const pool is later fixed-up
                 insert_to_fun_fixups(ava->name);
-                fun_insert_bytecode(&tmp, sizeof(uint16_t));
+                fun_insert_bytecode(&tmp, sizeof(tmp));
             }
             else if (is_global) {
                 fun_insert_bytecode(&BC_OP_GET_GLOBAL, sizeof(BC_OP_GET_GLOBAL));
@@ -564,18 +564,18 @@ void compile(Ast *ast) {
                 //we still need to insert the bytecode
                 //at the same time the missing index must be an index of a global variable
                 uint16_t tmp = 0;
-                fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(uint8_t));
+                fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(BC_OP_SET_GLOBAL));
                 //insert_to_fun_fixups uses the fn->sz as the offset
                 //the offset should be such that the index to const pool is later fixed-up
                 insert_to_fun_fixups(ava->name);
-                fun_insert_bytecode(&tmp, sizeof(uint16_t));
+                fun_insert_bytecode(&tmp, sizeof(tmp));
             }
             else if (is_global) {
-                fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(uint8_t));
+                fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(BC_OP_SET_GLOBAL));
                 fun_insert_bytecode(&var->index, sizeof(var->index));
             }
             else {
-                fun_insert_bytecode(&BC_OP_SET_LOCAL, sizeof(uint8_t));
+                fun_insert_bytecode(&BC_OP_SET_LOCAL, sizeof(BC_OP_SET_LOCAL));
                 fun_insert_bytecode(&var->index, sizeof(var->index));
             }
             return;
@@ -759,9 +759,10 @@ void compile(Ast *ast) {
             //the entry point is the index of the top-level function in the const_pool
             //we wrote the entry point to the const_pool in the fun_epilogue
             entry_point = cpm_free_i - 1;
+            //fixup the missing global variables
+            final_fixup();
             //set the number of items inserted to the const_pool
             const_pool_count = cpm_free_i;
-            final_fixup();
             return;
         }
         default: {

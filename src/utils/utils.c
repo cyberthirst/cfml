@@ -5,7 +5,6 @@
 #include <stdio.h>
 
 #include "../utils.h"
-
 #define DEBUG 0
 #if DEBUG
     #define PRINT_IF_DEBUG_ON
@@ -143,9 +142,10 @@ void print_op_stack(Value *stack, size_t size) {
     printf(")\n");
 }
 
-void print_instruction_type(Instruction ins) {
+void print_instruction_type(int count, const uint8_t *ip) {
     PRINT_IF_DEBUG_ON;
-    switch (ins) {
+    printf("%d: ", count);
+    switch (*ip) {
         case DROP:
             printf("DROP\n");
             break;
@@ -183,7 +183,7 @@ void print_instruction_type(Instruction ins) {
             printf("SET_GLOBAL\n");
             break;
         case GET_GLOBAL:
-            printf("GET_GLOBAL\n");
+            printf("GET_GLOBAL: %d\n", *(uint16_t *)(ip + 1));
             break;
         case BRANCH:
             printf("BRANCH\n");
@@ -195,7 +195,7 @@ void print_instruction_type(Instruction ins) {
             printf("RETURN\n");
             break;
         default:
-            printf("Unknown instruction: 0x%02X\n", ins);
+            printf("Unknown instruction: 0x%02X\n", *ip);
             exit(1);
     }
 }

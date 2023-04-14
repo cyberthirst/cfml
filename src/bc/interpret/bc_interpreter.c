@@ -404,7 +404,6 @@ void bc_builtins(Value obj, int argc, Str m_name) {
     size_t method_name_len = m_name.len;
     #define METHOD(name) \
 			if (sizeof(name) - 1 == method_name_len && memcmp(name, method_name, method_name_len) == 0) /* body*/
-    print_op_stack(itp->operands, itp->op_sz);
     if (*obj == VK_INTEGER || *obj == VK_BOOLEAN || *obj == VK_NULL) {
         assert(argc == 2);
         Value second = get_nth_local(1);
@@ -568,7 +567,6 @@ void exec_call_method() {
     assert(m_name->kind == VK_STRING);
 
     init_frame(argc, true);
-    print_op_stack(itp->operands, itp->op_sz);
 
     Object *obj = (Object *)itp->frames[itp->frames_sz].locals[0];
 
@@ -579,7 +577,7 @@ void bytecode_loop(){
     uint8_t *start_addr = itp->ip;
     while (itp->frames_sz) {
         //print_heap(heap);
-        print_instruction_type((int)(itp->ip - start_addr), *itp->ip);
+        print_instruction_type((int)(itp->ip - start_addr), itp->ip);
         switch (*itp->ip++) {
             case DROP: {
                 exec_drop();

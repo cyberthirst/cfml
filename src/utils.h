@@ -11,7 +11,7 @@ void print_val(Value val);
 
 void print_op_stack(Value *stack, size_t size);
 
-void print_instruction_type(Instruction ins);
+void print_instruction_type(int count, const uint8_t *ip);
 
 bool is_primitive(ValueKind kind);
 

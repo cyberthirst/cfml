@@ -374,7 +374,8 @@ void fun_epilogue() {
     }
     assert(all_fixups->cnt + fun->fun_fixups.cnt < MAX_FIXUPS_NUM);
     //copy the all_fixups to the global variable all_fixups
-    all_fixups[all_fixups->cnt++] = fun->fun_fixups;
+    if (fun->fun_fixups.cnt > 0)
+        all_fixups[all_fixups->cnt++] = fun->fun_fixups;
 }
 
 //function gets called when we define new global variable
@@ -392,6 +393,7 @@ void fixup(Str name, uint16_t fixup_index) {
                 uint8_t *fun_bc = const_pool_map[fun_index];
                 fun_bc[all_fixups[i].fixups[j].offset] = fixup_index;
                 all_fixups[i].fixups[j].fixed = true;
+                //printf("fixup at indexes: i: %d, j: %d of the name: %.*s\n", (int)i, (int)j, (int)name.len, name.str);
             }
         }
     }
@@ -415,6 +417,7 @@ void final_fixup() {
                 globals.indexes[globals.count] = cpm_free_i;
                 globals.count++;;
                 const_pool_insert_str(all_fixups[i].fixups[j].name);
+                //printf("fixup at indexes: i: %d, j: %d of the name: %.*s\n", (int)i, (int)j, (int)all_fixups[i].fixups[j].name.len, all_fixups[i].fixups[j].name.str);
             }
         }
     }

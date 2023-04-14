@@ -545,6 +545,8 @@ void bc_method_call(Value obj, Str name, int argc) {
             //we push here the pointer to the function object
             //this function object will be popped by the init_fun_call function
             push_operand((uint8_t *)func);
+            //we need to update the receiver obj depending on where the given method was found
+            itp->frames[itp->frames_sz].locals[0] = obj;
             init_fun_call(argc, true);
             return;
         }
@@ -574,9 +576,10 @@ void exec_call_method() {
 }
 
 void bytecode_loop(){
+    uint8_t *start_addr = itp->ip;
     while (itp->frames_sz) {
         //print_heap(heap);
-        print_instruction_type(*itp->ip);
+        print_instruction_type((int)(itp->ip - start_addr), *itp->ip);
         switch (*itp->ip++) {
             case DROP: {
                 exec_drop();

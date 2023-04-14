@@ -180,6 +180,13 @@ void const_pool_insert_bool(bool b){
     bump_const_pool_free(sizeof(Boolean));
 }
 
+void const_pool_insert_class(uint16_t count){
+    Bc_Class *pcls = (Bc_Class *)const_pool_map[cpm_free_i];
+    pcls->kind = VK_CLASS;
+    pcls->count = count;
+    bump_const_pool_free(sizeof(Bc_Class) + sizeof(uint16_t) * count);
+}
+
 void fun_insert_bytecode(const void *src, size_t sz) {
     Fun *fun = cfuns->funs[cfuns->current];
     memcpy(fun->fun + fun->sz, src, sz);
@@ -223,7 +230,7 @@ void leave_block() {
     //reset the var_cnt for the scope
     fun->env->scopes[fun->env->scope_cnt].var_cnt = 0;
     //leaving block -> decrement scope_cnt
-    fun->env->scope_cnt++;
+    fun->env->scope_cnt--;
 }
 
 Variable *find_name_in_env(Str name, Environment *env, size_t scope_cnt, bool *found_top_level) {
@@ -429,6 +436,25 @@ void compile(Ast *ast) {
             return;
         }
         case AST_OBJECT: {
+            AstObject *ao = (AstObject *)ast;
+            compile(ao->extends);
+            uint16_t cnt = ao->member_cnt;
+            //we allocate the class first and then fill the members
+            //thus we must save the index, because we need to insert the object opcode
+            uint16_t class_index = cpm_free_i;
+            Bc_Class *cls = (Bc_Class *)const_pool_map[cpm_free_i];
+            const_pool_insert_class(cnt);
+            for (uint16_t i = 0; i < cnt; ++i) {
+                AstDefinition *member = (AstDefinition *)ao->members[i];
+                enter_block();
+                compile(member->value);
+                //members are const_pool indexes to strings which represent the name of the member
+                cls->members[i] = cpm_free_i;
+                const_pool_insert_str(member->name);
+                leave_block();
+            }
+            fun_insert_bytecode(&BC_OP_OBJECT, sizeof(BC_OP_OBJECT));
+            fun_insert_bytecode(&class_index, sizeof(cpm_free_i));
             return;
         }
         case AST_FUNCTION: {
@@ -456,6 +482,10 @@ void compile(Ast *ast) {
             //if it is inside a block, we need to add it as a local variable
             if (cfuns->current == 0 && cfuns->funs[0]->env->scope_cnt == 0) { //add to global environment
                 fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(BC_OP_SET_GLOBAL));
+                //set the index to the first free slot in the constant pool
+                //in the compile step we created a constant and stored it in the constant pool, and pushed the object
+                //on the stack
+                //here we create a new name at the specified index, which will be asoociated with the value
                 fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
                 //global variable can fixup some missing indexes in the already compiled functions
                 //the problem is that we don't know beforehand at which index in the constant pool the function will
@@ -533,9 +563,21 @@ void compile(Ast *ast) {
             return;
         }
         case AST_FIELD_ACCESS: {
+            AstFieldAccess *afa = (AstFieldAccess *) ast;
+            compile(afa->object);
+            fun_insert_bytecode(&BC_OP_GET_FIELD, sizeof(BC_OP_GET_FIELD));
+            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+            //TODO: each time inserting a new string...
+            const_pool_insert_str(afa->field);
             return;
         }
         case AST_FIELD_ASSIGNMENT: {
+            AstFieldAssignment *afa = (AstFieldAssignment *) ast;
+            compile(afa->object);
+            compile(afa->value);
+            fun_insert_bytecode(&BC_OP_SET_FIELD, sizeof(BC_OP_SET_FIELD));
+            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+            const_pool_insert_str(afa->field);
             return;
         }
         case AST_FUNCTION_CALL: {
@@ -555,6 +597,16 @@ void compile(Ast *ast) {
             return;
         }
         case AST_METHOD_CALL: {
+            AstMethodCall *amc = (AstMethodCall *) ast;
+            uint8_t argc = amc->argument_cnt + 1;
+            compile(amc->object);
+            for (size_t i = 0; i < amc->argument_cnt; i++) {
+                compile(amc->arguments[i]);
+            }
+            fun_insert_bytecode(&BC_OP_CALL_METHOD, sizeof(BC_OP_CALL_METHOD));
+            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+            fun_insert_bytecode(&argc, sizeof(argc));
+            const_pool_insert_str(amc->name);
             return;
         }
         case AST_CONDITIONAL: {

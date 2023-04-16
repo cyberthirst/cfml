@@ -104,7 +104,7 @@ void pop_frame() {
 }
 
 bool index_is_global(uint16_t index) {
-    printf("index: %d, type: %d\n", index, *const_pool_map[index]);
+    //printf("index: %d, type: %d\n", index, *const_pool_map[index]);
     assert(*const_pool_map[index] == VK_STRING);
     for (int i = 0; i < globals.count; ++i) {
         if (globals.indexes[i] == index) {

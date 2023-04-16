@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 #include "../utils.h"
-#define DEBUG 0
+#define DEBUG 1
 #if DEBUG
     #define PRINT_IF_DEBUG_ON
 #else

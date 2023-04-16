@@ -6,6 +6,6 @@
 
 #include "../../parser.h"
 
-void bc_compile(const Ast *ast);
+void bc_compile(const Ast *ast, bool output);
 
 

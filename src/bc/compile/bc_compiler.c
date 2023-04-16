@@ -8,8 +8,8 @@
 #include "../../types.h"
 #include "../bc_shared_globals.h"
 #include "../../utils.h"
+#include "../serialization.h"
 
-#define FML_HEADER 0x464D4C0A
 //maximum functions that can be declared
 #define MAX_FUN_NUM 64 
 //maximum size of a function body in bytes
@@ -142,10 +142,6 @@ void compiler_init() {
 
 void compiler_deconstruct() {
     free(cfuns);
-}
-
-void output_bc(){
-
 }
 
 void bump_const_pool_free(size_t sz){
@@ -934,8 +930,18 @@ void compile(Ast *ast) {
 
 }
 
-void bc_compile(Ast *ast) {
+void bc_output(){
+    serialize_header();
+    serialize_constant_pool(const_pool_count);
+    serialize_globals(&globals);
+    serialize_entry_point(entry_point);
+}
+
+void bc_compile(Ast *ast, bool output) {
     compiler_init();
     compile(ast);
+    if (output) {
+        bc_output();
+    }
     compiler_deconstruct();
 }

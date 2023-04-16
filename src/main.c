@@ -150,17 +150,16 @@ int main(int argc, char *argv[]) {
             break;
         }
         case ACTION_BC_COMPILE: {
-            printf("Running the bc_compiler on source file %s\n", source_file);
 	        Ast *ast = get_ast(&arena);
 
-            bc_compile(ast);
+            bc_compile(ast, true);
 
             break;
         }
         case ACTION_RUN: {
-            printf("Running the source file %s\n", source_file);
+            printf("Running the the source file %s\n", source_file);
 	        Ast *ast = get_ast(&arena);
-            bc_compile(ast);
+            bc_compile(ast, false);
             bc_interpret();
             break;
         }

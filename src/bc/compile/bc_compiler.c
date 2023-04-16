@@ -461,6 +461,18 @@ void compile(Ast *ast) {
             return;
         }
         case AST_ARRAY: {
+            AstArray *aa = (AstArray *)ast;
+            switch (aa->initializer->kind) {
+                case AST_NULL:
+                case AST_BOOLEAN:
+                case AST_INTEGER:
+                case AST_VARIABLE_ACCESS:
+                    compile(aa->size);
+                    compile( aa->initializer);
+                    fun_insert_bytecode(&BC_OP_ARRAY, sizeof(BC_OP_ARRAY));
+                    return;
+                default:;
+            }
             return;
         }
         case AST_OBJECT: {
@@ -584,9 +596,28 @@ void compile(Ast *ast) {
             return;
         }
         case AST_INDEX_ACCESS: {
+            AstIndexAccess *aia = (AstIndexAccess *) ast;
+            uint8_t argc = 2;
+            compile(aia->object);
+            compile(aia->index);
+            //index access is realized via a method call to the built-in function "get"
+            fun_insert_bytecode(&BC_OP_CALL_METHOD, sizeof(BC_OP_CALL_METHOD));
+            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+            fun_insert_bytecode(&argc, sizeof(argc));
+            const_pool_insert_str(STR("get"));
             return;
         }
         case AST_INDEX_ASSIGNMENT: {
+            AstIndexAssignment *aia = (AstIndexAssignment *) ast;
+            uint8_t argc = 3;
+            compile(aia->object);
+            compile(aia->index);
+            compile(aia->value);
+            //index access is realized via a method call to the built-in function "get"
+            fun_insert_bytecode(&BC_OP_CALL_METHOD, sizeof(BC_OP_CALL_METHOD));
+            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+            fun_insert_bytecode(&argc, sizeof(argc));
+            const_pool_insert_str(STR("set"));
             return;
         }
         case AST_FIELD_ACCESS: {

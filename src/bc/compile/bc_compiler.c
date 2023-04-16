@@ -279,7 +279,6 @@ Variable *get_name_ptr(Str name, bool *is_global) {
     return NULL;
 }
 
-
 void add_name_to_scope(Str name, uint16_t index) {
     Fun *fun = cfuns->funs[cfuns->current];
     size_t scope_cnt = fun->env->scope_cnt;
@@ -438,6 +437,12 @@ void insert_null() {
     const_pool_insert_null();
 }
 
+void insert_int(i32 value) {
+    fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
+    fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
+    const_pool_insert_int(value);
+}
+
 void compile(Ast *ast) {
     switch(ast->kind) {
         case AST_NULL: {
@@ -455,13 +460,12 @@ void compile(Ast *ast) {
         }
         case AST_INTEGER: {
             AstInteger *ai = (AstInteger *)ast;
-            fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
-            fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
-            const_pool_insert_int(ai->value);
+            insert_int(ai->value);
             return;
         }
         case AST_ARRAY: {
             AstArray *aa = (AstArray *)ast;
+            //static initialization
             switch (aa->initializer->kind) {
                 case AST_NULL:
                 case AST_BOOLEAN:
@@ -473,6 +477,123 @@ void compile(Ast *ast) {
                     return;
                 default:;
             }
+
+            //dynamic initialization aka sea of PAIN
+            //we need to create a new dummy array and then iteratively fill it with the values of the initializer
+
+            //create local helpers to construct the array
+            //TODO unsafe: we skip certain important checks - see add_name_to_scope
+            Fun *fun = cfuns->funs[cfuns->current];
+            size_t idx = fun->current_var_i;
+            //we need to create 3 helper locals, those are their indexes in the locals array
+            uint16_t array_i = idx++;
+            //the iterator variable of the comprehension loop
+            uint16_t iterator_i = idx++;
+            //the size of the iterator, used for the loop condition
+            uint16_t size_i = idx++;
+            //additionally we need increment and compare methods for the iterator
+            uint16_t inc_cp = cpm_free_i;
+            const_pool_insert_str(STR("+"));
+            uint16_t cmp_cp = cpm_free_i;
+            const_pool_insert_str(STR("<"));
+            uint16_t set_cp = cpm_free_i;
+            const_pool_insert_str(STR("set"));
+
+            //initialize the helpers
+            compile(aa->size);
+            fun_insert_bytecode(&BC_OP_SET_LOCAL, sizeof(BC_OP_SET_LOCAL));
+            fun_insert_bytecode(&size_i, sizeof(size_i));
+            fun_insert_bytecode(&BC_OP_DROP, sizeof(BC_OP_DROP));
+            insert_int(0);
+            fun_insert_bytecode(&BC_OP_SET_LOCAL, sizeof(BC_OP_SET_LOCAL));
+            fun_insert_bytecode(&iterator_i, sizeof(iterator_i));
+            fun_insert_bytecode(&BC_OP_DROP, sizeof(BC_OP_DROP));
+            compile(aa->size);
+            insert_null();
+            fun_insert_bytecode(&BC_OP_ARRAY, sizeof(BC_OP_ARRAY));
+            fun_insert_bytecode(&BC_OP_SET_LOCAL, sizeof(BC_OP_SET_LOCAL));
+            fun_insert_bytecode(&array_i, sizeof(array_i));
+            fun_insert_bytecode(&BC_OP_DROP, sizeof(BC_OP_DROP));
+
+            //the loop:
+            // while iterator < size
+            //   array[iterator] = initializer
+            //will reuse the existing loop code
+
+            //the condition: call the < method on the iterator
+            uint32_t condition_offset = cfuns->funs[cfuns->current]->sz;
+            fun_insert_bytecode(&BC_OP_GET_LOCAL, sizeof(BC_OP_GET_LOCAL));
+            fun_insert_bytecode(&iterator_i, sizeof(iterator_i));
+            fun_insert_bytecode(&BC_OP_GET_LOCAL, sizeof(BC_OP_GET_LOCAL));
+            fun_insert_bytecode(&size_i, sizeof(size_i));
+            fun_insert_bytecode(&BC_OP_CALL_METHOD, sizeof(BC_OP_CALL_METHOD));
+            fun_insert_bytecode(&cmp_cp, sizeof(cmp_cp));
+            uint8_t argc = 2;
+            fun_insert_bytecode(&argc, sizeof(argc));
+
+            //if the condition is true, jump to the body
+            fun_insert_bytecode(&BC_OP_BRANCH, sizeof(BC_OP_BRANCH));
+            int16_t offset = 3;
+            //branch past the jump instruction and it's offset
+            fun_insert_bytecode(&offset, sizeof(offset));
+
+            //jump to the end of the loop
+            fun_insert_bytecode(&BC_OP_JUMP, sizeof(BC_OP_JUMP));
+            uint32_t jump_to_after_body_offset = cfuns->funs[cfuns->current]->sz;
+            //this offset is temporary, we will fix it later
+            fun_insert_bytecode(&offset, sizeof(offset));
+            //will be used to calculate body size, which is needed to calculate the jump_after_body offset
+            uint32_t before_body_offset = cfuns->funs[cfuns->current]->sz;
+
+            //compile the body
+            // 1. compile the intializer
+            // 2. set the array element at the iterator index to the initializer
+            // 3. increment the iterator
+            // 4. jump to the condition
+
+            //retreive the array and the itrator, those locals will be used in the method call to "set"
+            fun_insert_bytecode(&BC_OP_GET_LOCAL, sizeof(BC_OP_GET_LOCAL));
+            fun_insert_bytecode(&array_i, sizeof(array_i));
+            fun_insert_bytecode(&BC_OP_GET_LOCAL, sizeof(BC_OP_GET_LOCAL));
+            fun_insert_bytecode(&iterator_i, sizeof(iterator_i));
+
+            enter_block();
+            compile(aa->initializer);
+            leave_block();
+
+            //call the "set" method on the array
+            fun_insert_bytecode(&BC_OP_CALL_METHOD, sizeof(BC_OP_CALL_METHOD));
+            fun_insert_bytecode(&set_cp, sizeof(set_cp));
+            argc = 3;
+            fun_insert_bytecode(&argc, sizeof(argc));
+            fun_insert_bytecode(&BC_OP_DROP, sizeof(BC_OP_DROP));
+
+            //increment the iterator
+            fun_insert_bytecode(&BC_OP_GET_LOCAL, sizeof(BC_OP_GET_LOCAL));
+            fun_insert_bytecode(&iterator_i, sizeof(iterator_i));
+            insert_int(1);
+            fun_insert_bytecode(&BC_OP_CALL_METHOD, sizeof(BC_OP_CALL_METHOD));
+            fun_insert_bytecode(&inc_cp, sizeof(inc_cp));
+            argc = 2;
+            fun_insert_bytecode(&argc, sizeof(argc));
+            //set the result of the increment as the new iterator value
+            fun_insert_bytecode(&BC_OP_SET_LOCAL, sizeof(BC_OP_SET_LOCAL));
+            fun_insert_bytecode(&iterator_i, sizeof(iterator_i));
+            fun_insert_bytecode(&BC_OP_DROP, sizeof(BC_OP_DROP));
+
+            //jump to the condition
+            //jump is relative to the next opcode, so we must subtract the size of jump, which is 3B
+            offset = (condition_offset - cfuns->funs[cfuns->current]->sz) - 3;// - 1;
+            fun_insert_bytecode(&BC_OP_JUMP, sizeof(BC_OP_JUMP));
+            fun_insert_bytecode(&offset, sizeof(offset));
+            //fix the after body offset for the after body jump
+            uint32_t  after_body_offset = cfuns->funs[cfuns->current]->sz;
+            offset = after_body_offset - before_body_offset;
+            fun_fixup_bytecode(&offset, sizeof(offset), jump_to_after_body_offset);
+
+            //almost done, just need to push the resulting array to the stack
+            fun_insert_bytecode(&BC_OP_GET_LOCAL, sizeof(BC_OP_GET_LOCAL));
+            fun_insert_bytecode(&array_i, sizeof(array_i));
             return;
         }
         case AST_OBJECT: {

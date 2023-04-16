@@ -2,6 +2,8 @@
 // Created by Mirek Škrabal on 05.04.2023.
 //
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
@@ -107,6 +109,7 @@ typedef struct {
 typedef struct {
     //index of the current function
     int current;
+    size_t total_funs;
     Fun **funs;
 } CompiledFuns;
 
@@ -140,8 +143,19 @@ void compiler_init() {
     //cpmap = hashmap_new(sizeof(Str), 0, 0, 0, user_hash, user_compare, NULL, NULL);
 }
 
-void compiler_deconstruct() {
+void compiler_deconstruct(bool deconstruct_all) {
+    free(cfuns->funs);
     free(cfuns);
+    for (size_t i = 0; i < all_fixups_i; ++i) {
+        free(all_fixups[i].fixups);
+    }
+    free(all_fixups);
+    if (deconstruct_all){
+        free(const_pool_map);
+        free(const_pool);
+        free(globals.indexes);
+    }
+    
 }
 
 void bump_const_pool_free(size_t sz){
@@ -315,13 +329,14 @@ void fun_alloc(uint8_t paramc, AstFunction *af, bool defining) {
     fun->env = malloc(sizeof(Environment));
     fun->env->scope_cnt = 0;
     fun->env->scopes[fun->env->scope_cnt].var_cnt = 0;
-    fun->fun_fixups.fixups = malloc(sizeof(Fixup) * MAX_FIXUPS_NUM);
+    fun->fun_fixups.fixups = calloc(MAX_FIXUPS_NUM, sizeof(Fixup));
     fun->fun_fixups.cnt = 0;
     fun->sz = 0;
     fun->locals = 0;
     fun->current_var_i = 0;
     //cfuns->current is initialized in the init function to -1, so the entry-point is stored at index 0
     cfuns->current++;
+    cfuns->total_funs++;
     cfuns->funs[cfuns->current] = fun;
     //at the 0th index is the "this" variable
     add_name_to_scope(STR("this"), 0);
@@ -362,8 +377,6 @@ void fun_epilogue() {
     //printf("inserting fun to const pool, index: %d\n", cpm_free_i);
     //printf("%.*s", (int)fun.len, str.str);
     const_pool_insert_fun(cfuns->current);
-    free(fun->fun);
-    free(fun->env);
     //it's ok to overflow for the entry point (we won't compile anything after finishing the compilation of entry point)
     --cfuns->current;
     //update the const pool index in the all_fixups, we now know the index of the currently compiled function
@@ -373,8 +386,16 @@ void fun_epilogue() {
     }
     assert(all_fixups_i + fun->fun_fixups.cnt < MAX_FIXUPS_NUM);
     //copy the all_fixups to the global variable all_fixups
-    if (fun->fun_fixups.cnt > 0)
-        all_fixups[all_fixups_i++] = fun->fun_fixups;
+    if (fun->fun_fixups.cnt > 0) {
+        //all_fixups[all_fixups_i++] = fun->fun_fixups;
+        all_fixups[all_fixups_i].fixups = fun->fun_fixups.fixups;
+        all_fixups[all_fixups_i].cnt = fun->fun_fixups.cnt;
+        all_fixups_i++;
+
+    }
+    free(fun->fun);
+    free(fun->env);
+    free(fun);
 }
 
 //function gets called when we define new global variable
@@ -404,7 +425,6 @@ void final_fixup() {
     //go through all the fixups
     for (size_t i = 0; i < all_fixups_i; ++i) {
         //go through all the fixups in the function i
-        Fixups fixups_test = all_fixups[i];
         for (size_t j = 0; j < all_fixups[i].cnt; ++j) {
             //those indexes that are not yet fixed will have cp_index == 0
             if (all_fixups[i].fixups[j].fixed == false) {
@@ -432,7 +452,6 @@ void insert_to_fun_fixups(Str name) {
 }
 
 void insert_null() {
-    uint16_t tmp = cpm_free_i;
     fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
     fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
     const_pool_insert_null();
@@ -943,5 +962,5 @@ void bc_compile(Ast *ast, bool output) {
     if (output) {
         bc_output();
     }
-    compiler_deconstruct();
+    compiler_deconstruct(output);
 }

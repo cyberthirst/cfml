@@ -150,7 +150,7 @@ void print_instruction_type(int count, const uint8_t *ip) {
             printf("DROP\n");
             break;
         case CONSTANT:
-            printf("CONSTANT\n");
+            printf("CONSTANT: %d\n", *(uint16_t *)(ip + 1));
             break;
         case PRINT:
             printf("PRINT\n");

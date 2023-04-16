@@ -21,7 +21,7 @@
 #define MAX_ENVS 128
 #define MAX_VARS 128
 #define MAX_SCOPES 128
-#define MAX_FIXUPS_NUM 64
+#define MAX_FIXUPS_NUM 128
 
 
 const uint8_t BC_OP_DROP = 0x00;
@@ -120,6 +120,7 @@ CompiledFuns *cfuns;
 //key is the value that should be inserted to cp converted to string, value is the index in the cp
 //struct hashmap *cpmap;
 Fixups *all_fixups;
+size_t all_fixups_i = 0;
 //-------------------------GLOBALS-END-------------------------
 
 
@@ -130,7 +131,6 @@ void compiler_init() {
     cfuns = malloc(sizeof(CompiledFuns));
     cfuns->funs = malloc(sizeof(Fun *) * MAX_FUN_NUM);
     all_fixups = malloc(sizeof(Fixups) * MAX_FUN_NUM);
-    all_fixups->cnt = 0;
     //we alloc function and there we increment current
     //we want the entry-point to be stored at index 0
     //initializing this to -1 is the easiest way how to achieve this
@@ -149,7 +149,11 @@ void output_bc(){
 }
 
 void bump_const_pool_free(size_t sz){
+    //printf("bump_const_pool_free: %d, sz: %zu\n", cpm_free_i, sz);
+    //printf("before bump: const_pool_map[0]: '%d'\n", *const_pool_map[0]);
     const_pool_map[cpm_free_i + 1] = align_address(const_pool_map[cpm_free_i] + sz);
+    //printf("after bump: const_pool_map[0]: '%d'\n", *const_pool_map[0]);
+    assert(const_pool_map[cpm_free_i + 1] < (uint8_t *)const_pool + MAX_CONST_POOL_SZ);
     ++cpm_free_i;
 }
 
@@ -366,15 +370,15 @@ void fun_epilogue() {
     free(fun->env);
     //it's ok to overflow for the entry point (we won't compile anything after finishing the compilation of entry point)
     --cfuns->current;
-    //update the const pool index in the all_fixups, we now the index of the currently compiled function
+    //update the const pool index in the all_fixups, we now know the index of the currently compiled function
     for (size_t i = 0; i < fun->fun_fixups.cnt; ++i) {
         //we need to subtract 1 because the const pool index just got incremented in the const_pool_insert_fun
         fun->fun_fixups.fixups[i].cp_index = cpm_free_i - 1;
     }
-    assert(all_fixups->cnt + fun->fun_fixups.cnt < MAX_FIXUPS_NUM);
+    assert(all_fixups_i + fun->fun_fixups.cnt < MAX_FIXUPS_NUM);
     //copy the all_fixups to the global variable all_fixups
     if (fun->fun_fixups.cnt > 0)
-        all_fixups[all_fixups->cnt++] = fun->fun_fixups;
+        all_fixups[all_fixups_i++] = fun->fun_fixups;
 }
 
 //function gets called when we define new global variable
@@ -382,7 +386,7 @@ void fun_epilogue() {
 //we will go through the all_fixups compare the name and fixup the index if match is found
 void fixup(Str name, uint16_t fixup_index) {
     //go through all the fixups
-    for (size_t i = 0; i < all_fixups->cnt; ++i) {
+    for (size_t i = 0; i < all_fixups_i; ++i) {
         //go through all the fixups in the function i
         for (size_t j = 0; j < all_fixups[i].cnt; ++j) {
             //TODO: would be nice to remove the fixed indexes.. (maybe linked list?)
@@ -402,8 +406,9 @@ void fixup(Str name, uint16_t fixup_index) {
 // only by using = and not let) those indexes will be fixed in the final_fixup
 void final_fixup() {
     //go through all the fixups
-    for (size_t i = 0; i < all_fixups->cnt; ++i) {
+    for (size_t i = 0; i < all_fixups_i; ++i) {
         //go through all the fixups in the function i
+        Fixups fixups_test = all_fixups[i];
         for (size_t j = 0; j < all_fixups[i].cnt; ++j) {
             //those indexes that are not yet fixed will have cp_index == 0
             if (all_fixups[i].fixups[j].fixed == false) {
@@ -413,8 +418,7 @@ void final_fixup() {
                 fixup(all_fixups[i].fixups[j].name, cpm_free_i);
                 //insert the index to globals
                 //ie here we finally define the global variable
-                globals.indexes[globals.count] = cpm_free_i;
-                globals.count++;;
+                globals.indexes[globals.count++] = cpm_free_i;
                 const_pool_insert_str(all_fixups[i].fixups[j].name);
                 //printf("fixup at indexes: i: %d, j: %d of the name: %.*s\n", (int)i, (int)j, (int)all_fixups[i].fixups[j].name.len, all_fixups[i].fixups[j].name.str);
             }
@@ -432,6 +436,7 @@ void insert_to_fun_fixups(Str name) {
 }
 
 void insert_null() {
+    uint16_t tmp = cpm_free_i;
     fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
     fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
     const_pool_insert_null();

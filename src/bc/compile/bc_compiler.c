@@ -94,6 +94,9 @@ typedef struct {
     uint8_t *fun;
     //size of the function in bytes
     uint32_t sz;
+    //size of the function body in bytes
+    uint32_t body_sz;
+    uint32_t body_offset;
     //max number of local variables
     //we use the term "max" because for example after leaving a scope the vars cease to exist, but we
     //still need to be able to store them when we are in the scope
@@ -204,8 +207,14 @@ void const_pool_insert_class(uint16_t count){
 
 void fun_insert_bytecode(const void *src, size_t sz) {
     Fun *fun = cfuns->funs[cfuns->current];
+    memcpy(fun->fun + fun->body_offset + fun->body_sz, src, sz);
+    fun->body_sz += sz;
+    fun->sz += sz;
+}
+
+void fun_insert_metadata(const void *src, size_t sz) {
+    Fun *fun = cfuns->funs[cfuns->current];
     memcpy(fun->fun + fun->sz, src, sz);
-    printf("current sz: %d, adding: %d, final: %d\n", fun->sz, sz, fun->sz + sz);
     fun->sz += sz;
 }
 
@@ -331,16 +340,10 @@ void add_name_to_scope(Str name, uint16_t index, bool is_this) {
 }
 
 void fun_alloc(uint8_t paramc, AstFunction *af) {
-    Fun *fun = malloc(sizeof(Fun));
-    fun->fun = malloc(MAX_FUN_BODY_SZ);
-    fun->env = malloc(sizeof(Environment));
-    fun->env->scope_cnt = 0;
-    fun->env->scopes[fun->env->scope_cnt].var_cnt = 0;
+    Fun *fun = calloc(1, sizeof(Fun));
+    fun->fun = calloc(1, MAX_FUN_BODY_SZ);
+    fun->env = calloc(1, sizeof(Environment));
     fun->fun_fixups.fixups = calloc(MAX_FIXUPS_NUM, sizeof(Fixup));
-    fun->fun_fixups.cnt = 0;
-    fun->sz = 0;
-    fun->locals = 0;
-    fun->current_var_i = 0;
     //cfuns->current is initialized in the init function to -1, so the entry-point is stored at index 0
     cfuns->current++;
     cfuns->total_funs++;
@@ -358,30 +361,29 @@ void fun_alloc(uint8_t paramc, AstFunction *af) {
         }
     }
     //insert the function opcode
-    fun_insert_bytecode(&TAG_FUNCTION, sizeof(TAG_FUNCTION));
+    fun_insert_metadata(&TAG_FUNCTION, sizeof(TAG_FUNCTION));
     //insert the number of arguments
     //increase paramc by 1 because of the first hidden param "this"
     paramc += 1;
-    fun_insert_bytecode(&paramc, sizeof(paramc));
+    fun_insert_metadata(&paramc, sizeof(paramc));
     //skip locals and length
     // - locals: the number of local variables defined in this function, represented by a 16b unsigned integer
     //   (this number  does not include the number of parameters nor the hidden this parameter).
     // - length: the total length of the bytecode vector (the total count of bytes in the function’s body),
     //   4B unsigned integer
     fun->sz += sizeof(uint16_t) + sizeof(uint32_t);
+    fun->body_offset = fun->sz;
 }
 
 void fun_epilogue() {
     Fun *fun = cfuns->funs[cfuns->current];
-    fun_insert_locals(fun->locals);
-    fun_insert_length(fun->sz);
     //insert the return opcode, every func, even the entry point must end with a return
     fun_insert_bytecode(&BC_OP_RETURN, sizeof(BC_OP_RETURN));
+    fun_insert_locals(fun->locals);
+    fun_insert_length(fun->body_sz);
     //copy the top-level function to the const_pool
-    //printf("inserting fun to const pool, index: %d\n", cpm_free_i);
     //printf("%.*s", (int)fun.len, str.str);
     const_pool_insert_fun(cfuns->current);
-    //it's ok to overflow for the entry point (we won't compile anything after finishing the compilation of entry point)
     if (cfuns->current > 0)
         cfuns->current--;
     //update the const pool index in the all_fixups, we now know the index of the currently compiled function
@@ -414,7 +416,9 @@ void fixup(Str name, uint16_t fixup_index, bool final) {
                 //we found the name in the all_fixups, so we need to fixup the index
                 uint16_t fun_index = all_fixups[i].fixups[j].cp_index;
                 uint8_t *fun_bc = const_pool_map[fun_index];
-                fun_bc[all_fixups[i].fixups[j].offset] = fixup_index;
+                uint16_t fixup_offset = all_fixups[i].fixups[j].offset;
+                fun_bc[fixup_offset] = (uint8_t)(fixup_index & 0x00FF);
+                fun_bc[fixup_offset + 1] = (uint8_t)((fixup_index & 0xFF00) >> 8);
                 all_fixups[i].fixups[j].fixed = true;
             }
         }
@@ -427,7 +431,10 @@ void fixup(Str name, uint16_t fixup_index, bool final) {
         for (size_t i = 0; i < fun->fun_fixups.cnt; ++i) {
             if (str_cmp(name, fun->fun_fixups.fixups[i].name) == 0) {
                 //we found the name in the all_fixups, so we need to fixup the index
-                fun->fun[fun->fun_fixups.fixups[i].offset] = fixup_index;
+                uint8_t *fun_bc = fun->fun;
+                uint16_t fixup_offset = fun->fun_fixups.fixups[i].offset;
+                fun_bc[fixup_offset] = (uint8_t)(fixup_index & 0x00FF);
+                fun_bc[fixup_offset + 1] = (uint8_t)((fixup_index & 0xFF00) >> 8);
                 fun->fun_fixups.fixups[i].fixed = true;
             }
         }
@@ -528,6 +535,9 @@ void compile(Ast *ast) {
             //the size of the iterator, used for the loop condition
             uint16_t size_i = fun->current_var_i++;
             //additionally we need increment and compare methods for the iterator
+            if (fun->current_var_i > fun->locals) {
+                fun->locals = fun->current_var_i;
+            }
             uint16_t inc_cp = cpm_free_i;
             const_pool_insert_str(STR("+"));
             uint16_t cmp_cp = cpm_free_i;

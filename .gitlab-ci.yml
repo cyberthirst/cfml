@@ -1,28 +1,68 @@
 image: $CI_REGISTRY/vlasami6/fmltest:master
 
 test:
-  script:
-    - meson setup build
-    - meson compile -C build
-    #- cppcheck --error-exitcode=1 *.c
-    - env FML="$(readlink -f ./build/fml)" FML_REF=/cfml/fml /FMLtest/suite bc_interpret
-        hello_world
-        escape
-        push_pop
-        locals
-        globals
-        condition
-        loop
-        function0
-        function1
-        function_with_locals
-        function_with_globals
-        recursive_function
-        aliasing
-        object
-        methods
-        operators
-        dispatch
-        arrays
-        getters_and_setters
-        
+    script:
+        - meson setup build -D b_sanitize=address,undefined
+        - meson compile -C build
+        #- cppcheck --error-exitcode=1 *.c
+        - export ASAN_OPTIONS=symbolize=1:debug=1:detect_leaks=1:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1
+        - export FML="$(readlink -f ./build/fml)"
+        - export FML_REF=/cfml/fml
+        - /FMLtest/suite bc_compile
+            hello_world
+            null
+            boolean
+            integer
+            block_result
+            variable_scope
+            variable_scope_weirdness
+            function_definition_0
+            function_definition_1
+            function_definition_2
+            function_definition_3
+            function_call_0
+            function_call_1
+            function_call_2
+            function_call_3
+            function_call
+            function_value
+            function_scope
+            function_scope_locals
+            function_scope_weirdness
+            assignment
+            assignment_scope
+            assignment_scope_weirdness
+            loop_0
+            loop_1
+            loop_null
+            loop_scope_weirdness
+            condition_true
+            condition_false
+            condition_int
+            condition_obj
+            condition_scope
+            object_fields
+            object_field_assignment
+            object_inheritence_definition
+            object_print
+            object_methods
+            object_operators
+            object_dispatch
+            loop_n
+            loop_scope
+            function_rec
+            arrays_basic
+            arrays_of_objects
+            array_comprehensions
+            fibonacci
+            fizzbuzz_fun
+            fizzbuzz_loop
+            stack
+            roman
+            brainfuck
+            langtons_ant
+            sudoku
+        - /FMLtest/suite run
+            brainfuck
+            langtons_ant
+            sudoku

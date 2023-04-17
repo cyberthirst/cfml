@@ -20,3 +20,5 @@ void bc_interpret();
 void bc_init();
 
 void bc_free();
+
+Value peek_operand();

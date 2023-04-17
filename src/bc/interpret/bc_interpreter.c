@@ -578,7 +578,7 @@ void bytecode_loop(){
     uint8_t *start_addr = itp->ip;
     while (itp->frames_sz) {
         //print_heap(heap);
-        print_instruction_type((int)(itp->ip - start_addr), itp->ip);
+        print_instruction((int) (itp->ip - start_addr), itp->ip);
         switch (*itp->ip++) {
             case DROP: {
                 exec_drop();

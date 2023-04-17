@@ -3,8 +3,11 @@
 //
 
 #include <stdio.h>
-
+#include "../types.h"
 #include "../utils.h"
+#include "../bc/bc_shared_globals.h"
+#include "../bc/interpret/bc_interpreter.h"
+
 #define DEBUG 0
 #if DEBUG
     #define PRINT_IF_DEBUG_ON
@@ -142,7 +145,7 @@ void print_op_stack(Value *stack, size_t size) {
     printf(")\n");
 }
 
-void print_instruction_type(int count, const uint8_t *ip) {
+void print_instruction(int count, const uint8_t *ip) {
     PRINT_IF_DEBUG_ON;
     printf("%d: ", count);
     switch (*ip) {
@@ -150,7 +153,9 @@ void print_instruction_type(int count, const uint8_t *ip) {
             printf("DROP\n");
             break;
         case CONSTANT:
-            printf("CONSTANT: %d\n", *(uint16_t *)(ip + 1));
+            printf("CONSTANT: index: %d, with value: ", *(uint16_t *) (ip + 1));
+            print_val(const_pool_map[*(uint16_t *) (ip + 1)]);
+            printf("\n");
             break;
         case PRINT:
             printf("PRINT\n");
@@ -167,24 +172,36 @@ void print_instruction_type(int count, const uint8_t *ip) {
         case SET_FIELD:
             printf("SET_FIELD\n");
             break;
-        case CALL_METHOD:
-            printf("CALL_METHOD\n");
+        case CALL_METHOD: {
+            Bc_String *str = (Bc_String *) (const_pool_map[*(uint16_t *) (ip + 1)]);
+            printf("CALL_METHOD: \"%.*s\"\n", (int) str->len, str->value);
             break;
-        case CALL_FUNCTION:
+        }
+        case CALL_FUNCTION: {
             printf("CALL_FUNCTION\n");
             break;
-        case SET_LOCAL:
-            printf("SET_LOCAL\n");
+        }
+        case SET_LOCAL: {
+            printf("SET_LOCAL: index: %d, to value: ", *(uint16_t *) (ip + 1));
+            print_val(peek_operand());
+            printf("\n");
             break;
-        case GET_LOCAL:
-            printf("GET_LOCAL\n");
+        }
+        case GET_LOCAL: {
+            //printf("GET_LOCAL: index: %d\n", *(uint16_t *) (ip + 1));
+            printf("GET_LOCAL: index: %d\n", *(uint16_t *) (ip + 1));
             break;
-        case SET_GLOBAL:
-            printf("SET_GLOBAL\n");
+        }
+        case SET_GLOBAL: {
+            Bc_String *str = (Bc_String *) (const_pool_map[*(uint16_t *) (ip + 1)]);
+            printf("SET_GLOBAL: index: %d, name: \"%.*s\"\n", *(uint16_t *) (ip + 1), (int) str->len, str->value);
             break;
-        case GET_GLOBAL:
-            printf("GET_GLOBAL: %d\n", *(uint16_t *)(ip + 1));
+        }
+        case GET_GLOBAL: {
+            Bc_String *str = (Bc_String *) (const_pool_map[*(uint16_t *) (ip + 1)]);
+            printf("GET_GLOBAL: index: %d, name: \"%.*s\"\n", *(uint16_t *) (ip + 1), (int) str->len, str->value);
             break;
+        }
         case BRANCH:
             printf("BRANCH\n");
             break;

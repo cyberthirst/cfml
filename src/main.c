@@ -74,6 +74,11 @@ Ast * get_ast(Arena *arena){
         exit(1);
     }
 
+    if (src.len == 0) {
+        arena_destroy(arena);
+        exit(0);
+    }
+
     Ast *ast = parse_src(arena, src);
 
     if (ast == NULL) {
@@ -157,7 +162,6 @@ int main(int argc, char *argv[]) {
             break;
         }
         case ACTION_RUN: {
-            printf("Running the the source file %s\n", source_file);
 	        Ast *ast = get_ast(&arena);
             bc_compile(ast, false);
             bc_interpret();

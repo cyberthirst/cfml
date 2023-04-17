@@ -15,7 +15,7 @@
 //maximum functions that can be declared
 #define MAX_FUN_NUM 64 
 //maximum size of a function body in bytes
-#define MAX_FUN_BODY_SZ (1024 * 32)
+#define MAX_FUN_BODY_SZ (1024 * 64)
 #define MAX_VARS_NUM 64
 #define MAX_GLOBALS_NUM 64
 #define FUN_LOCALS_INDEX 2
@@ -169,6 +169,7 @@ void bump_const_pool_free(size_t sz){
 
 void const_pool_insert_str(Str str){
     Bc_String * pstr = (Bc_String *)const_pool_map[cpm_free_i];
+    //printf("const str\n");
     pstr->kind = VK_STRING;
     pstr->len = str.len;
     memcpy(pstr->value, str.str, str.len);
@@ -387,7 +388,6 @@ void fun_epilogue() {
     assert(all_fixups_i + fun->fun_fixups.cnt < MAX_FIXUPS_NUM);
     //copy the all_fixups to the global variable all_fixups
     if (fun->fun_fixups.cnt > 0) {
-        //all_fixups[all_fixups_i++] = fun->fun_fixups;
         all_fixups[all_fixups_i].fixups = fun->fun_fixups.fixups;
         all_fixups[all_fixups_i].cnt = fun->fun_fixups.cnt;
         all_fixups_i++;
@@ -402,6 +402,7 @@ void fun_epilogue() {
 //this variable is potentially missing in some of the already compiled functions
 //we will go through the all_fixups compare the name and fixup the index if match is found
 void fixup(Str name, uint16_t fixup_index) {
+    //printf("fixing with index: %d\n", fixup_index);
     //go through all the fixups
     for (size_t i = 0; i < all_fixups_i; ++i) {
         //go through all the fixups in the function i
@@ -466,13 +467,13 @@ void insert_int(i32 value) {
 void compile(Ast *ast) {
     switch(ast->kind) {
         case AST_NULL: {
+            //printf("const null\n");
             insert_null();
             return;
         }
         case AST_BOOLEAN: {
             AstBoolean *ab = (AstBoolean *)ast;
-            //TODO: those 2 lines are repeated multiple times for all constants
-            //      move it to a function/extend the existing one
+            //printf("const bool\n");
             fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
             fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
             const_pool_insert_bool(ab->value);
@@ -480,6 +481,7 @@ void compile(Ast *ast) {
         }
         case AST_INTEGER: {
             AstInteger *ai = (AstInteger *)ast;
+            //printf("const int\n");
             insert_int(ai->value);
             return;
         }
@@ -503,14 +505,15 @@ void compile(Ast *ast) {
 
             //create local helpers to construct the array
             //TODO unsafe: we skip certain important checks - see add_name_to_scope
+            //             we also don't free the local here
             Fun *fun = cfuns->funs[cfuns->current];
-            size_t idx = fun->current_var_i;
+            //size_t idx = fun->current_var_i;
             //we need to create 3 helper locals, those are their indexes in the locals array
-            uint16_t array_i = idx++;
+            uint16_t array_i = fun->current_var_i++;
             //the iterator variable of the comprehension loop
-            uint16_t iterator_i = idx++;
+            uint16_t iterator_i = fun->current_var_i++;
             //the size of the iterator, used for the loop condition
-            uint16_t size_i = idx++;
+            uint16_t size_i = fun->current_var_i++;
             //additionally we need increment and compare methods for the iterator
             uint16_t inc_cp = cpm_free_i;
             const_pool_insert_str(STR("+"));
@@ -572,11 +575,14 @@ void compile(Ast *ast) {
             // 4. jump to the condition
 
             //retreive the array and the itrator, those locals will be used in the method call to "set"
+            //array: on this we call the "set"
             fun_insert_bytecode(&BC_OP_GET_LOCAL, sizeof(BC_OP_GET_LOCAL));
             fun_insert_bytecode(&array_i, sizeof(array_i));
+            //iterator: this is the index argument to "set"
             fun_insert_bytecode(&BC_OP_GET_LOCAL, sizeof(BC_OP_GET_LOCAL));
             fun_insert_bytecode(&iterator_i, sizeof(iterator_i));
 
+            //value: this is the value argument to "set"
             enter_block();
             compile(aa->initializer);
             leave_block();
@@ -663,6 +669,7 @@ void compile(Ast *ast) {
             //if it is inside a block, we need to add it as a local variable
             if (cfuns->current == 0 && cfuns->funs[0]->env->scope_cnt == 0) { //add to global environment
                 fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(BC_OP_SET_GLOBAL));
+                //printf("setting global on index: %d\n", cpm_free_i);
                 //set the index to the first free slot in the constant pool
                 //in the compile step we created a constant and stored it in the constant pool, and pushed the object
                 //on the stack
@@ -728,6 +735,8 @@ void compile(Ast *ast) {
             }
             else if (is_global) {
                 fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(BC_OP_SET_GLOBAL));
+
+                //printf("setting global on index: %d", cpm_free_i);
                 fun_insert_bytecode(&var->index, sizeof(var->index));
             }
             else {

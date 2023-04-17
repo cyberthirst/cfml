@@ -366,6 +366,7 @@ void fun_alloc(uint8_t paramc, AstFunction *af, bool defining) {
         //   4B unsigned integer
         fun->sz += sizeof(uint16_t) + sizeof(uint32_t);
     }
+    //all_fixups
 }
 
 void fun_epilogue() {
@@ -379,7 +380,8 @@ void fun_epilogue() {
     //printf("%.*s", (int)fun.len, str.str);
     const_pool_insert_fun(cfuns->current);
     //it's ok to overflow for the entry point (we won't compile anything after finishing the compilation of entry point)
-    --cfuns->current;
+    if (cfuns->current > 0)
+        cfuns->current--;
     //update the const pool index in the all_fixups, we now know the index of the currently compiled function
     for (size_t i = 0; i < fun->fun_fixups.cnt; ++i) {
         //we need to subtract 1 because the const pool index just got incremented in the const_pool_insert_fun
@@ -398,14 +400,12 @@ void fun_epilogue() {
     free(fun);
 }
 
-//function gets called when we define new global variable
-//this variable is potentially missing in some of the already compiled functions
+
+//this function gets called when we define new global variable
+//the global variable is potentially missing in some of the already compiled functions
 //we will go through the all_fixups compare the name and fixup the index if match is found
-void fixup(Str name, uint16_t fixup_index) {
-    //printf("fixing with index: %d\n", fixup_index);
-    //go through all the fixups
+void fixup(Str name, uint16_t fixup_index, bool final) {
     for (size_t i = 0; i < all_fixups_i; ++i) {
-        //go through all the fixups in the function i
         for (size_t j = 0; j < all_fixups[i].cnt; ++j) {
             //TODO: would be nice to remove the fixed indexes.. (maybe linked list?)
             if (str_cmp(name, all_fixups[i].fixups[j].name) == 0) {
@@ -414,7 +414,19 @@ void fixup(Str name, uint16_t fixup_index) {
                 uint8_t *fun_bc = const_pool_map[fun_index];
                 fun_bc[all_fixups[i].fixups[j].offset] = fixup_index;
                 all_fixups[i].fixups[j].fixed = true;
-                //printf("fixup at indexes: i: %d, j: %d of the name: %.*s\n", (int)i, (int)j, (int)name.len, name.str);
+            }
+        }
+    }
+    //current function doesn't yet have the index in the const pool, thus we need to handle it differently
+    //it can happen that the global variable that is yet missing is defined in this function
+    //therefore we need to check it too
+    if (!final) {
+        Fun *fun = cfuns->funs[cfuns->current];
+        for (size_t i = 0; i < fun->fun_fixups.cnt; ++i) {
+            if (str_cmp(name, fun->fun_fixups.fixups[i].name) == 0) {
+                //we found the name in the all_fixups, so we need to fixup the index
+                fun->fun[fun->fun_fixups.fixups[i].offset] = fixup_index;
+                fun->fun_fixups.fixups[i].fixed = true;
             }
         }
     }
@@ -432,7 +444,7 @@ void final_fixup() {
                 //we need to insert the missing name to the const_pool
                 //so the current cpm_free_i will be the index of the name in the const_pool
                 //printf("fixing up: %.*s with index: %d\n", (int)all_fixups[i].fixups[j].name.len, all_fixups[i].fixups[j].name.str, cpm_free_i);
-                fixup(all_fixups[i].fixups[j].name, cpm_free_i);
+                fixup(all_fixups[i].fixups[j].name, cpm_free_i, true);
                 //insert the index to globals
                 //ie here we finally define the global variable
                 globals.indexes[globals.count++] = cpm_free_i;
@@ -678,7 +690,7 @@ void compile(Ast *ast) {
                 //global variable can fixup some missing indexes in the already compiled functions
                 //the problem is that we don't know beforehand at which index in the constant pool the function will
                 //end up, however upon definition of that var we already know that index - and it is cpm_free_i
-                fixup(ad->name, cpm_free_i);
+                fixup(ad->name, cpm_free_i, false);
                 //the global variables are accessed via the index to const pool, where their name is stored
                 add_name_to_scope(ad->name, cpm_free_i);
                 const_pool_insert_str(ad->name);

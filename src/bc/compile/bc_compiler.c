@@ -397,7 +397,9 @@ void fun_epilogue() {
         all_fixups[all_fixups_i].fixups = fun->fun_fixups.fixups;
         all_fixups[all_fixups_i].cnt = fun->fun_fixups.cnt;
         all_fixups_i++;
-
+    }
+    else {
+        free(fun->fun_fixups.fixups);
     }
     free(fun->fun);
     free(fun->env);

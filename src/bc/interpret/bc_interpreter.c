@@ -259,9 +259,10 @@ void exec_print() {
     push_operand(global_null);
 }
 
-void exec_return() {
+void exec_return(bool is_primitive) {
     assert(itp->frames_sz > 0);
-    itp->ip = itp->frames[--itp->frames_sz].ret_addr;
+    if (!is_primitive)
+        itp->ip = itp->frames[--itp->frames_sz].ret_addr;
     free(itp->frames[itp->frames_sz].locals);
 }
 
@@ -533,6 +534,7 @@ void bc_method_call(Value obj, Str name, int argc) {
     //if inheriting from a primitive type then call the builtin
     if (object->kind != VK_OBJECT) {
         bc_builtins(obj, argc, name);
+        exec_return(true);
         return;
     }
     for (size_t i = 0; i < object->field_cnt; i++) {
@@ -628,7 +630,7 @@ void bytecode_loop(){
                 exec_jump();
                 break;
             case RETURN:
-                exec_return();
+                exec_return(false);
                 break;
             default:
                 printf("Unknown instruction: 0x%02X\n", *itp->ip);

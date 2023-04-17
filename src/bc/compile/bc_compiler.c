@@ -205,6 +205,7 @@ void const_pool_insert_class(uint16_t count){
 void fun_insert_bytecode(const void *src, size_t sz) {
     Fun *fun = cfuns->funs[cfuns->current];
     memcpy(fun->fun + fun->sz, src, sz);
+    printf("current sz: %d, adding: %d, final: %d\n", fun->sz, sz, fun->sz + sz);
     fun->sz += sz;
 }
 
@@ -300,7 +301,7 @@ Variable *get_name_ptr(Str name, bool *is_global) {
     return NULL;
 }
 
-void add_name_to_scope(Str name, uint16_t index) {
+void add_name_to_scope(Str name, uint16_t index, bool is_this) {
     Fun *fun = cfuns->funs[cfuns->current];
     size_t scope_cnt = fun->env->scope_cnt;
     size_t var_cnt = fun->env->scopes[scope_cnt].var_cnt;
@@ -320,7 +321,7 @@ void add_name_to_scope(Str name, uint16_t index) {
             fun->locals = fun->current_var_i;
         }
         //update the globals
-        if (cfuns->current == 0 && scope_cnt == 0) {
+        if (cfuns->current == 0 && scope_cnt == 0 && !is_this) {
             //the names of the global variables are stored in the const pool
             //we access them dynamically by finding the name in the const pool and then subsequently search
             //for the name in the globals values
@@ -345,14 +346,15 @@ void fun_alloc(uint8_t paramc, AstFunction *af) {
     cfuns->total_funs++;
     cfuns->funs[cfuns->current] = fun;
     //at the 0th index is the "this" variable
-    add_name_to_scope(STR("this"), 0);
+    add_name_to_scope(STR("this"), 0, true);
+
 
     //for the entry point function af is NULL
     if (af != NULL) {
         for (size_t i = 0; i < af->parameter_cnt; ++i) {
             //add the parameters as local variables
             //curent_var_i is  for i == 0 set to 1, so we don't overwrite the "this" variable
-            add_name_to_scope(af->parameters[i], fun->current_var_i);
+            add_name_to_scope(af->parameters[i], fun->current_var_i, false);
         }
     }
     //insert the function opcode
@@ -691,14 +693,14 @@ void compile(Ast *ast) {
                 //end up, however upon definition of that var we already know that index - and it is cpm_free_i
                 fixup(ad->name, cpm_free_i, false);
                 //the global variables are accessed via the index to const pool, where their name is stored
-                add_name_to_scope(ad->name, cpm_free_i);
+                add_name_to_scope(ad->name, cpm_free_i, false);
                 const_pool_insert_str(ad->name);
             }
             else {//add to local environment
                 uint16_t cvar = cfuns->funs[cfuns->current]->current_var_i;
                 fun_insert_bytecode(&BC_OP_SET_LOCAL, sizeof(BC_OP_SET_LOCAL));
                 fun_insert_bytecode(&cvar, sizeof(cvar));
-                add_name_to_scope(ad->name, cvar);
+                add_name_to_scope(ad->name, cvar, false);
             }
             //for some reason the operands are only peeked, not popped
             //fun_insert_bytecode(&BC_OP_DROP, sizeof(BC_OP_DROP));

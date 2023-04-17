@@ -4,7 +4,6 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
 #include "../../types.h"
@@ -13,7 +12,7 @@
 #include "../serialization.h"
 
 //maximum functions that can be declared
-#define MAX_FUN_NUM 64 
+#define MAX_FUN_NUM 64
 //maximum size of a function body in bytes
 #define MAX_FUN_BODY_SZ (1024 * 64)
 #define MAX_VARS_NUM 64
@@ -127,7 +126,7 @@ size_t all_fixups_i = 0;
 //-------------------------GLOBALS-END-------------------------
 
 
-void compiler_init() {
+void compiler_construct() {
     const_pool = malloc(sizeof(uint8_t) * MAX_CONST_POOL_SZ);
     const_pool_map  = malloc(sizeof(void*) * (MAX_CONST_POOL_SZ + 1));
     const_pool_map[cpm_free_i] = const_pool;
@@ -140,9 +139,10 @@ void compiler_init() {
     cfuns->current = -1;
     globals.indexes = malloc(sizeof(Value) * MAX_GLOBALS_NUM);
     globals.count = 0;
-    //cpmap = hashmap_new(sizeof(Str), 0, 0, 0, user_hash, user_compare, NULL, NULL);
 }
 
+//in case of action bc_compile we want to deconstruct everything
+//in case of action run we don't..
 void compiler_deconstruct(bool deconstruct_all) {
     free(cfuns->funs);
     free(cfuns);
@@ -155,21 +155,19 @@ void compiler_deconstruct(bool deconstruct_all) {
         free(const_pool);
         free(globals.indexes);
     }
-    
 }
 
 void bump_const_pool_free(size_t sz){
-    //printf("bump_const_pool_free: %d, sz: %zu\n", cpm_free_i, sz);
-    //printf("before bump: const_pool_map[0]: '%d'\n", *const_pool_map[0]);
     const_pool_map[cpm_free_i + 1] = align_address(const_pool_map[cpm_free_i] + sz);
-    //printf("after bump: const_pool_map[0]: '%d'\n", *const_pool_map[0]);
-    assert(const_pool_map[cpm_free_i + 1] < (uint8_t *)const_pool + MAX_CONST_POOL_SZ);
+    if (const_pool_map[cpm_free_i + 1] >= (uint8_t *)const_pool + MAX_CONST_POOL_SZ){
+        printf("const pool overflow\n");
+        exit(1);
+    }
     ++cpm_free_i;
 }
 
 void const_pool_insert_str(Str str){
     Bc_String * pstr = (Bc_String *)const_pool_map[cpm_free_i];
-    //printf("const str\n");
     pstr->kind = VK_STRING;
     pstr->len = str.len;
     memcpy(pstr->value, str.str, str.len);
@@ -271,6 +269,14 @@ Variable *find_name_in_env(Str name, Environment *env, size_t scope_cnt, bool *f
     return NULL;
 }
 
+void add_global(uint16_t index) {
+    if (globals.count == MAX_GLOBALS_NUM){
+        printf("Error: too many global variables.\n");
+        exit(1);
+    }
+    globals.indexes[globals.count++] = index;
+}
+
 
 Variable *get_name_ptr(Str name, bool *is_global) {
     Variable *var;
@@ -318,13 +324,12 @@ void add_name_to_scope(Str name, uint16_t index) {
             //the names of the global variables are stored in the const pool
             //we access them dynamically by finding the name in the const pool and then subsequently search
             //for the name in the globals values
-            globals.indexes[globals.count] = index;
-            globals.count++;
+            add_global(index);
         }
     }
 }
 
-void fun_alloc(uint8_t paramc, AstFunction *af, bool defining) {
+void fun_alloc(uint8_t paramc, AstFunction *af) {
     Fun *fun = malloc(sizeof(Fun));
     fun->fun = malloc(MAX_FUN_BODY_SZ);
     fun->env = malloc(sizeof(Environment));
@@ -350,23 +355,18 @@ void fun_alloc(uint8_t paramc, AstFunction *af, bool defining) {
             add_name_to_scope(af->parameters[i], fun->current_var_i);
         }
     }
-    //if the function is already defined, we don't need to insert anything to its bytecode
-    //TODO probably always called with defining == true? -> remove the parameter
-    if (defining) {
-        //insert the function opcode
-        fun_insert_bytecode(&TAG_FUNCTION, sizeof(TAG_FUNCTION));
-        //insert the number of arguments
-        //increase paramc by 1 because of the first hidden param "this"
-        paramc += 1;
-        fun_insert_bytecode(&paramc, sizeof(paramc));
-        //skip locals and length
-        // - locals: the number of local variables defined in this function, represented by a 16b unsigned integer
-        //   (this number  does not include the number of parameters nor the hidden this parameter).
-        // - length: the total length of the bytecode vector (the total count of bytes in the function’s body),
-        //   4B unsigned integer
-        fun->sz += sizeof(uint16_t) + sizeof(uint32_t);
-    }
-    //all_fixups
+    //insert the function opcode
+    fun_insert_bytecode(&TAG_FUNCTION, sizeof(TAG_FUNCTION));
+    //insert the number of arguments
+    //increase paramc by 1 because of the first hidden param "this"
+    paramc += 1;
+    fun_insert_bytecode(&paramc, sizeof(paramc));
+    //skip locals and length
+    // - locals: the number of local variables defined in this function, represented by a 16b unsigned integer
+    //   (this number  does not include the number of parameters nor the hidden this parameter).
+    // - length: the total length of the bytecode vector (the total count of bytes in the function’s body),
+    //   4B unsigned integer
+    fun->sz += sizeof(uint16_t) + sizeof(uint32_t);
 }
 
 void fun_epilogue() {
@@ -447,7 +447,7 @@ void final_fixup() {
                 fixup(all_fixups[i].fixups[j].name, cpm_free_i, true);
                 //insert the index to globals
                 //ie here we finally define the global variable
-                globals.indexes[globals.count++] = cpm_free_i;
+                add_global(cpm_free_i);
                 const_pool_insert_str(all_fixups[i].fixups[j].name);
                 //printf("fixup at indexes: i: %d, j: %d of the name: %.*s\n", (int)i, (int)j, (int)all_fixups[i].fixups[j].name.len, all_fixups[i].fixups[j].name.str);
             }
@@ -519,7 +519,6 @@ void compile(Ast *ast) {
             //TODO unsafe: we skip certain important checks - see add_name_to_scope
             //             we also don't free the local here
             Fun *fun = cfuns->funs[cfuns->current];
-            //size_t idx = fun->current_var_i;
             //we need to create 3 helper locals, those are their indexes in the locals array
             uint16_t array_i = fun->current_var_i++;
             //the iterator variable of the comprehension loop
@@ -581,12 +580,12 @@ void compile(Ast *ast) {
             uint32_t before_body_offset = cfuns->funs[cfuns->current]->sz;
 
             //compile the body
-            // 1. compile the intializer
+            // 1. compile the initializer
             // 2. set the array element at the iterator index to the initializer
             // 3. increment the iterator
             // 4. jump to the condition
 
-            //retreive the array and the itrator, those locals will be used in the method call to "set"
+            //retrieve the array and the iterator, those locals will be used in the method call to "set"
             //array: on this we call the "set"
             fun_insert_bytecode(&BC_OP_GET_LOCAL, sizeof(BC_OP_GET_LOCAL));
             fun_insert_bytecode(&array_i, sizeof(array_i));
@@ -658,7 +657,7 @@ void compile(Ast *ast) {
         }
         case AST_FUNCTION: {
             AstFunction *af = (AstFunction *)ast;
-            fun_alloc(af->parameter_cnt, af, true);
+            fun_alloc(af->parameter_cnt, af);
             compile(af->body);
             fun_epilogue();
             //important to insert the bytecode after the epilogue, because otherwise we would insert the bytecode
@@ -937,7 +936,7 @@ void compile(Ast *ast) {
         }
         case AST_TOP: {
             AstTop *top = (AstTop *)ast;
-            fun_alloc(0, NULL, true);
+            fun_alloc(0, NULL);
             //we have to treat the entry point specially, the fun_alloc function increments cfuns->current
             //which is the correct thing to do, however for the entry-point we want to start at index 0
             //cfuns->current = 0;
@@ -967,7 +966,6 @@ void compile(Ast *ast) {
             exit(1);
         }
     }
-
 }
 
 void bc_output(){
@@ -978,7 +976,7 @@ void bc_output(){
 }
 
 void bc_compile(Ast *ast, bool output) {
-    compiler_init();
+    compiler_construct();
     compile(ast);
     if (output) {
         bc_output();

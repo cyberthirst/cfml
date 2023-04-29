@@ -10,7 +10,6 @@
 
 #include "parser.h"
 
-
 typedef enum {
     VK_INTEGER = 0x00,
     VK_NULL = 0x01,

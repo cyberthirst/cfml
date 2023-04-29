@@ -4,13 +4,28 @@
 
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
+#include "../types.h"
+#include "../bc/interpret/bc_interpreter.h"
 
-#include "../heap/heap.h"
 
-typedef struct Block {
-    struct Block *next;
-    size_t sz;
-    uint8_t *free;
-} Block;
+/*
+ * roots of the gc:
+ * - global variables
+ * - frames
+ *   - local variables
+ * - stack
+ */
+
+typedef struct {
+    Frame *frames;
+    size_t *frames_sz;
+    Value *stack;
+    size_t *stack_sz;
+    Bc_Globals *globals;
+} Roots;
+
+//global variable
+//will be initialized in the bc_interpreter
+extern Roots *roots;
+
+void garbage_collect(Heap *heap);

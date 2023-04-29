@@ -2,48 +2,97 @@
 // Created by Mirek Škrabal on 29.04.2023.
 //
 
+#include "gc.h"
+#include "../heap/heap.h"
 
 //we don't want to add a new flag to the types, so we use the highest bit of the kind field
 #define MARK_FLAG 0x80 // 10000000 in binary
-#define MARK(val) (*(Value *)(val) |= MARK_FLAG)
-#define UNMARK(val) (*(Value *)(val) &= ~MARK_FLAG)
-#define IS_MARKED(val) (*(Value *)(val) & MARK_FLAG)
-#define GET_KIND(val) (*(Value *)(val) & ~MARK_FLAG)
+#define MARK(val) (*(val) |= MARK_FLAG)
+#define UNMARK(val) (*(val) &= ~MARK_FLAG)
+#define IS_MARKED(val) (*(val) & MARK_FLAG)
+#define GET_KIND(val) (*(val) & ~MARK_FLAG)
 
-/*void mark(void *object) {
-    switch (GET_KIND(object)) {
-        case VK_INTEGER:
-            mark_integer((Integer *)object);
+void mark_value(Value val) {
+    if (IS_MARKED(val)) {
+        // Already marked, no need to traverse again
+        return;
+    }
+
+    MARK(val);
+
+    switch (*val) {
+        case VK_ARRAY: {
+            Array *arr = (Array *)val;
+            for (size_t i = 0; i < arr->size; ++i) {
+                mark_value(arr->val[i]);
+            }
             break;
-            // Other cases...
+        }
+        case VK_OBJECT: {
+            Object *obj = (Object *)val;
+            mark_value(obj->parent);
+            for (size_t i = 0; i < obj->field_cnt; ++i) {
+                mark_value(obj->val[i].val);
+            }
+            break;
+        }
+        case VK_FUNCTION: {
+            // TODO:
+            break;
+        }
+            // For other cases, there's no nested Value to mark
     }
 }
 
-void merge_free_blocks(Heap *heap) {
-    sort_free_list(heap); // This needs to be implemented
-    uint8_t *current = heap->heap_free_list;
-    while (current != NULL) {
-        // If the next block is right after the current one, merge them
-        uint8_t *next = *(uint8_t **)current;
-        if (next != NULL && next == current + get_block_size(current)) {
-            // Update the size of the current block
-            set_block_size(current, get_block_size(current) + get_block_size(next));
-            // Skip the next block in the free list
-            *(uint8_t **)current = *(uint8_t **)next;
-        } else {
-            // Move on to the next block
-            current = next;
+void mark() {
+    // Mark frames
+    for (size_t i = 0; i < *(roots->frames_sz); ++i) {
+        Frame *frame = roots->frames + i;
+        for (size_t j = 0; j < frame->locals_sz; ++j) {
+            Value val = frame->locals[j];
+            mark_value(val);
         }
+    }
+
+    // Mark stack
+    for (size_t i = 0; i < *(roots->stack_sz); ++i) {
+        Value val = roots->stack + i;
+        mark_value(val);
+    }
+
+    // Mark globals
+    for (uint16_t i = 0; i < roots->globals->count; ++i) {
+        Value val = roots->globals->values[i];
+        mark_value(val);
     }
 }
 
 void sweep(Heap *heap) {
-    for (void *object = heap->start; object != heap->free; object = get_next_object(object)) {
-        if (!IS_MARKED(object)) {
-            free_object(heap, object);
-        } else {
-            UNMARK(object);
+    Block **current = &(heap->free_list);
+    while (*current != NULL) {
+        uint8_t *block_start = (*current)->free;
+        uint8_t *block_end = block_start + (*current)->sz;
+
+        for (uint8_t *ptr = block_start; ptr < block_end; ptr += sizeof(Value)) {
+            Value val = (Value)ptr;
+            if (IS_MARKED(val)) {
+                // If the value was marked, unmark it for the next GC cycle
+                UNMARK(val);
+            } else {
+                // The value wasn't marked, free it
+                // Note: This is a simple form of freeing, you may need to adjust for your case
+                Block *new_block = malloc(sizeof(Block));
+                new_block->next = *current;
+                new_block->sz = sizeof(Value);
+                new_block->free = ptr;
+                *current = new_block;
+            }
         }
+        current = &((*current)->next);
     }
-    merge_free_blocks(heap);
-}*/
+}
+
+void garbage_collect(Heap *heap) {
+    mark();
+    sweep(heap);
+}

@@ -11,17 +11,11 @@
 #include "../../heap/heap.h"
 #include "../../utils.h"
 #include "../bc_shared_globals.h"
+#include "../../gc/gc.h"
 
 //we can have max 1024 * 16 ptrs to the heap
 #define MAX_OPERANDS (1024 * 16)
 #define MAX_FRAMES (1024 * 16)
-
-typedef struct {
-    uint8_t *ret_addr;
-    //ptrs to the heap
-    uint8_t **locals;
-    size_t locals_sz;
-} Frame;
 
 //struct for representing the inner state of the itp
 typedef struct {
@@ -39,6 +33,7 @@ typedef struct {
 Bc_Interpreter *itp;
 Heap *heap;
 Value global_null;
+Roots *roots;
 
 void bc_init() {
     itp = malloc(sizeof(Bc_Interpreter));
@@ -48,6 +43,7 @@ void bc_init() {
     itp->frames_sz = 0;
     itp->operands = malloc(sizeof(void *) * MAX_OPERANDS);
     itp->op_sz = 0;
+    //TODO pass --heap-size param from the cmd
     heap = construct_heap(MEM_SZ);
     global_null = construct_null(heap);
     //array that acts like a hash map - we just allocate as big array as there are constants
@@ -56,6 +52,12 @@ void bc_init() {
     for (int i = 0; i < const_pool_count; i++) {
         globals.values[i] = global_null;
     }
+    //set the roots for the GC
+    roots = malloc(sizeof(Roots));
+    roots->frames = itp->frames;
+    roots->frames_sz = &itp->frames_sz;
+    roots->stack = itp->operands;
+    roots->stack_sz = &itp->op_sz;
 }
 
 void bc_free() {

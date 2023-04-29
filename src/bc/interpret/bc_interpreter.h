@@ -11,7 +11,12 @@
 #include "../../ast/ast_interpreter.h"
 
 
-
+typedef struct {
+    uint8_t *ret_addr;
+    //ptrs to the heap
+    uint8_t **locals;
+    size_t locals_sz;
+} Frame;
 
 void deserialize_bc_file(const char* filename);
 

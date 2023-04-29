@@ -5,14 +5,18 @@
 #pragma once
 
 #include <stdint.h>
-#include "../parser.h"
 #include "../types.h"
-#include "../gc/gc.h"
 
 //#include "../ast/ast_interpreter.h"
 //#include "../bc/bc_interpreter.h"
 
 extern const long long int MEM_SZ;
+
+typedef struct {
+    struct Block *next;
+    size_t sz;
+    uint8_t *free;
+} Block;
 
 typedef struct {
     uint8_t *heap_start;

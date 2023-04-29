@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "heap.h"
+#include "../gc/gc.h"
 #include "../ast/ast_interpreter.h"
 
 Heap *construct_heap(const long long int mem_sz) {
@@ -34,6 +35,7 @@ void heap_free(Heap **heap) {
 }
 
 void *heap_alloc(size_t sz, Heap *heap) {
+    bool gc = false;
     // Adjust the requested size for alignment
     size_t sz_aligned = sz;
     size_t alignment = 8; // Align to 8 bytes
@@ -41,9 +43,10 @@ void *heap_alloc(size_t sz, Heap *heap) {
     if (diff != 0) {
         sz_aligned += alignment - diff; // Adjust the size to the next multiple of alignment
     }
-
+    Block **current;
+alloc_again:
+    current = &(heap->free_list);
     // Try to find a free block of sufficient size
-    Block **current = &(heap->free_list);
     while (*current != NULL) {
         if ((*current)->sz >= sz_aligned) {
             // Found a block of sufficient size
@@ -64,7 +67,11 @@ void *heap_alloc(size_t sz, Heap *heap) {
         }
         current = &((*current)->next);
     }
-    //TODO here we should run the garbage collector
+    garbage_collect(heap);
+    if (!gc) {
+        gc = true;
+        goto alloc_again;
+    }
 
     // No free block of sufficient size was found
     printf("Heap is full, exiting.\n");

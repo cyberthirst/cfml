@@ -48,10 +48,7 @@ void bc_init() {
     itp->frames_sz = 0;
     itp->operands = malloc(sizeof(void *) * MAX_OPERANDS);
     itp->op_sz = 0;
-    heap = malloc(sizeof(Heap));
-    heap->heap_start = malloc(MEM_SZ);
-    heap->heap_free = heap->heap_start;
-    heap->heap_size = 0;
+    heap = construct_heap(MEM_SZ);
     global_null = construct_null(heap);
     //array that acts like a hash map - we just allocate as big array as there are constants
     globals.values = malloc(sizeof(void *) * const_pool_count);
@@ -67,8 +64,7 @@ void bc_free() {
     free(itp);
     free(const_pool);
     free(const_pool_map);
-    free(heap->heap_start);
-    free(heap);
+    heap_free(&heap);
     free(globals.values);
     free(globals.indexes);
 }

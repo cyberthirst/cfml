@@ -7,30 +7,69 @@
 #include "heap.h"
 #include "../ast/ast_interpreter.h"
 
+Heap *construct_heap(const long long int mem_sz) {
+    Heap *heap = malloc(sizeof(Heap));
+    heap->heap_start = malloc(MEM_SZ);
+    heap->heap_free = heap->heap_start;
+    heap->free_list = malloc(sizeof(Block));
+    heap->free_list->next = NULL;
+    heap->free_list->sz = MEM_SZ;
+    heap->free_list->free = heap->heap_start;
+    heap->heap_size = 0;
+    return heap;
+}
+
+void heap_free(Heap **heap) {
+    // Free the free blocks list
+    Block *current = (*heap)->free_list;
+    while (current != NULL) {
+        Block *next = current->next;
+        free(current);
+        current = next;
+    }
+
+    free((*heap)->heap_start);
+    free(*heap);
+    *heap = NULL;
+}
 
 void *heap_alloc(size_t sz, Heap *heap) {
-    //printf("allocating %lld bytes\n", sz);
-    if (heap->heap_size + sz > MEM_SZ) {
-        printf("Heap is full, exiting.\n");
-        printf("Max heap size is: %ld, and current heap size is: %ld\n", MEM_SZ, heap->heap_size);
-        exit(1);
+    // Adjust the requested size for alignment
+    size_t sz_aligned = sz;
+    size_t alignment = 8; // Align to 8 bytes
+    size_t diff = sz_aligned % alignment;
+    if (diff != 0) {
+        sz_aligned += alignment - diff; // Adjust the size to the next multiple of alignment
     }
-    else {
-        void *ptr = heap->heap_free;
 
-        heap->heap_free += sz;
-        heap->heap_size += sz;
+    // Try to find a free block of sufficient size
+    Block **current = &(heap->free_list);
+    while (*current != NULL) {
+        if ((*current)->sz >= sz_aligned) {
+            // Found a block of sufficient size
+            void *ptr = (*current)->free;
 
-        //align to 8 bytes
-        size_t diff = 8 - (heap->heap_size % 8);
-        if (diff != 8) {
-            heap->heap_free += diff;
-            heap->heap_size += diff;
+            // If the block is larger than needed, update it, otherwise remove it
+            if ((*current)->sz > sz_aligned) {
+                (*current)->free += sz_aligned;
+                (*current)->sz -= sz_aligned;
+            } else {
+                Block *next = (*current)->next;
+                //we don't free the data, the heap array stays intact
+                free(*current);
+                *current = next;
+            }
+
+            return ptr;
         }
-
-        //printf("heap size is: %ld\n", heap->heap_size);
-        return ptr;
+        current = &((*current)->next);
     }
+    //TODO here we should run the garbage collector
+
+    // No free block of sufficient size was found
+    printf("Heap is full, exiting.\n");
+    printf("Max heap size is: %ld, and current heap size is: %ld\n", MEM_SZ, heap->heap_size);
+    exit(1);
 }
 
 //TODO add printing of all types

@@ -7,20 +7,25 @@
 #include <stdint.h>
 #include "../parser.h"
 #include "../types.h"
+#include "../gc/gc.h"
 
 //#include "../ast/ast_interpreter.h"
 //#include "../bc/bc_interpreter.h"
 
 extern const long long int MEM_SZ;
 
-
 typedef struct {
     uint8_t *heap_start;
     uint8_t *heap_free;
+    Block *free_list;
     size_t heap_size;
 } Heap;
 
 void print_heap(Heap *heap);
+
+Heap *construct_heap(const long long int mem_sz);
+
+void heap_free(Heap **heap);
 
 void *heap_alloc(size_t sz, Heap *heap);
 

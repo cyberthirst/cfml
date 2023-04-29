@@ -10,10 +10,7 @@ const long long int MEM_SZ = (1024L * 1024 * 1024 * 1);
 
 IState* init_interpreter() {
     IState *state = malloc(sizeof(IState));
-    state->heap = malloc(sizeof(Heap));
-    state->heap->heap_start = malloc(MEM_SZ);
-    state->heap->heap_free = state->heap->heap_start;
-    state->heap->heap_size = 0;
+    state->heap = construct_heap(MEM_SZ);
     state->envs = malloc(sizeof(Environment) * MAX_ENVS);
     state->current_env = 0;
     state->null = construct_null(state->heap);

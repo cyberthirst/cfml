@@ -18,10 +18,9 @@ void mark_value(Value val) {
         return;
     }
 
-    MARK(val);
-
     switch (*val) {
         case VK_ARRAY: {
+            MARK(val);
             Array *arr = (Array *)val;
             for (size_t i = 0; i < arr->size; ++i) {
                 mark_value(arr->val[i]);
@@ -29,6 +28,7 @@ void mark_value(Value val) {
             break;
         }
         case VK_OBJECT: {
+            MARK(val);
             Object *obj = (Object *)val;
             mark_value(obj->parent);
             for (size_t i = 0; i < obj->field_cnt; ++i) {
@@ -36,63 +36,71 @@ void mark_value(Value val) {
             }
             break;
         }
-        case VK_FUNCTION: {
-            // TODO:
-            break;
-        }
-            // For other cases, there's no nested Value to mark
+        default:
+            MARK(val);
     }
 }
 
 void mark() {
+    Roots *rt = roots;
     // Mark frames
     for (size_t i = 0; i < *(roots->frames_sz); ++i) {
         Frame *frame = roots->frames + i;
         for (size_t j = 0; j < frame->locals_sz; ++j) {
-            Value val = frame->locals[j];
-            mark_value(val);
+            mark_value(frame->locals[j]);
         }
     }
 
     // Mark stack
     for (size_t i = 0; i < *(roots->stack_sz); ++i) {
-        Value val = roots->stack + i;
-        mark_value(val);
+        mark_value(roots->stack[i]);
     }
+    //TODO are all the values really allocated directly in the roots?
+    // isn't it the case that I allocate some value and root it later?
 
     // Mark globals
-    for (uint16_t i = 0; i < roots->globals->count; ++i) {
-        Value val = roots->globals->values[i];
-        mark_value(val);
-    }
+    //TODO maybe not needed? globals point to const pool
+    //for (uint16_t i = 0; i < roots->globals->count; ++i) {
+    //    mark_value(roots->globals->values[i]);
+    //}
 }
 
 void sweep(Heap *heap) {
-    Block **current = &(heap->free_list);
-    while (*current != NULL) {
-        uint8_t *block_start = (*current)->free;
-        uint8_t *block_end = block_start + (*current)->sz;
+    uint8_t *heap_start = heap->heap_start;
+    uint8_t *heap_end = heap->heap_start + heap->heap_size;
+    bool is_consecutive_unmarked = false;
+    size_t block_size = 0;
+    uint8_t *block_start = NULL;
 
-        for (uint8_t *ptr = block_start; ptr < block_end; ptr += sizeof(Value)) {
-            Value val = (Value)ptr;
-            if (IS_MARKED(val)) {
-                // If the value was marked, unmark it for the next GC cycle
-                UNMARK(val);
-            } else {
-                // The value wasn't marked, free it
-                // Note: This is a simple form of freeing, you may need to adjust for your case
+    while (heap_start < heap_end) {
+        Value val = (Value)heap_start;
+        if (IS_MARKED(val)) {
+            //is marked thus shouldn't be freed, therefore we just skip it
+            UNMARK(val);
+            if (is_consecutive_unmarked){
                 Block *new_block = malloc(sizeof(Block));
-                new_block->next = *current;
-                new_block->sz = sizeof(Value);
-                new_block->free = ptr;
-                *current = new_block;
+                new_block->next = heap->free_list;
+                new_block->sz = block_size;
+                new_block->start = block_start;
+                heap->free_list = new_block;
+                block_size = 0;
             }
+            is_consecutive_unmarked = false;
         }
-        current = &((*current)->next);
+        else {
+            if (!is_consecutive_unmarked) {
+                block_start = heap_start;
+            }
+            block_size += get_sizeof_value(val);
+            is_consecutive_unmarked = true;
+        }
+        heap_start += get_sizeof_value(val);
     }
 }
 
 void garbage_collect(Heap *heap) {
+    //TODO add if here that we're running the bc interpreter
+    // for AST interpreter we don't mark the roots and thus GC doens't make any sense
     mark();
     sweep(heap);
 }

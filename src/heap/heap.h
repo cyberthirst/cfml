@@ -15,7 +15,7 @@ extern const long long int MEM_SZ;
 typedef struct {
     struct Block *next;
     size_t sz;
-    uint8_t *free;
+    uint8_t *start;
 } Block;
 
 typedef struct {
@@ -27,6 +27,8 @@ typedef struct {
 
 void print_heap(Heap *heap);
 
+size_t get_sizeof_value(Value val);
+
 Heap *construct_heap(const long long int mem_sz);
 
 void heap_free(Heap **heap);
@@ -35,7 +37,6 @@ void *heap_alloc(size_t sz, Heap *heap);
 
 
 Array *array_alloc(int size, Heap *heap);
-
 
 Value construct_array(int size, Heap *heap);
 

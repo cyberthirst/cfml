@@ -10,10 +10,10 @@
 
 /*
  * roots of the gc:
- * - global variables
  * - frames
  *   - local variables
  * - stack
+ * TODO - global_null
  */
 
 typedef struct {

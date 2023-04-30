@@ -6,6 +6,7 @@
 
 #include "heap.h"
 #include "../gc/gc.h"
+#include "../utils/utils.h"
 #include "../ast/ast_interpreter.h"
 
 Heap *construct_heap(const long long int mem_sz) {
@@ -15,13 +16,13 @@ Heap *construct_heap(const long long int mem_sz) {
     heap->free_list = malloc(sizeof(Block));
     heap->free_list->next = NULL;
     heap->free_list->sz = MEM_SZ;
-    heap->free_list->free = heap->heap_start;
+    heap->free_list->start = heap->heap_start;
     heap->heap_size = 0;
     return heap;
 }
 
 void heap_free(Heap **heap) {
-    // Free the free blocks list
+    // Free the start blocks list
     Block *current = (*heap)->free_list;
     while (current != NULL) {
         Block *next = current->next;
@@ -45,20 +46,21 @@ void *heap_alloc(size_t sz, Heap *heap) {
     }
     Block **current;
 alloc_again:
+    garbage_collect(heap);
     current = &(heap->free_list);
-    // Try to find a free block of sufficient size
+    // Try to find a start block of sufficient size
     while (*current != NULL) {
         if ((*current)->sz >= sz_aligned) {
             // Found a block of sufficient size
-            void *ptr = (*current)->free;
+            void *ptr = (*current)->start;
 
             // If the block is larger than needed, update it, otherwise remove it
             if ((*current)->sz > sz_aligned) {
-                (*current)->free += sz_aligned;
+                (*current)->start += sz_aligned;
                 (*current)->sz -= sz_aligned;
             } else {
                 Block *next = (*current)->next;
-                //we don't free the data, the heap array stays intact
+                //we don't start the data, the heap array stays intact
                 free(*current);
                 *current = next;
             }
@@ -67,16 +69,61 @@ alloc_again:
         }
         current = &((*current)->next);
     }
+    /*
+    // TODO uncomment this when testing is finished - currently we call gc for every allocation
     garbage_collect(heap);
     if (!gc) {
         gc = true;
         goto alloc_again;
-    }
+    }*/
 
-    // No free block of sufficient size was found
+    // No start block of sufficient size was found
     printf("Heap is full, exiting.\n");
     printf("Max heap size is: %ld, and current heap size is: %ld\n", MEM_SZ, heap->heap_size);
     exit(1);
+}
+
+//TODO this function should be used on multiple places, not only in gc, refactor
+size_t get_sizeof_value(Value val) {
+    size_t sz = 0;
+    switch (*val) {
+        case VK_INTEGER: {
+            sz += sizeof(Integer);
+            break;
+        }
+        case VK_BOOLEAN: {
+            sz += sizeof(Boolean);
+            break;
+        }
+        case VK_NULL: {
+            sz += sizeof(Null);
+            break;
+        }
+        case VK_STRING: {
+            Bc_String *str = (Bc_String *) sz;
+            sz += sizeof(Bc_String) + str->len;
+            break;
+        }
+        case VK_OBJECT: {
+            Object *obj = (Object *) sz;
+            sz += sizeof(Object) + sizeof(Field) * obj->field_cnt;
+            break;
+        }
+        case VK_FUNCTION: {
+            Bc_Func *func = (Bc_Func *) sz;
+            sz += sizeof(Bc_Func) + func->len;
+            break;
+        }
+        default: {
+            UNREACHABLE;
+        }
+    }
+    //align to 8 bytes
+    size_t diff = 8 - ((uintptr_t)val % 8);
+    if (diff != 8) {
+        sz += diff;
+    }
+    return sz;
 }
 
 //TODO add printing of all types

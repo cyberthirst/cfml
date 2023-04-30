@@ -5,7 +5,10 @@
 #pragma once
 
 #include <stddef.h>
-#include "types.h"
+#include <assert.h>
+#include "../types.h"
+
+#define UNREACHABLE assert(false && "Unreachable code!")
 
 void print_val(Value val);
 

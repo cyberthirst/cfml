@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 #include "../types.h"
-#include "../utils.h"
+#include "utils.h"
 #include "../bc/bc_shared_globals.h"
 #include "../bc/interpret/bc_interpreter.h"
 
@@ -14,7 +14,6 @@
 #else
     #define PRINT_IF_DEBUG_ON return
 #endif
-
 
 uint16_t deserialize_u16(const uint8_t *data) {
     return (data[0]<<0) | (data[1]<<8);

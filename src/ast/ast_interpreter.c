@@ -4,7 +4,7 @@
 #include "ast_interpreter.h"
 #include "../heap/heap.h"
 #include "../parser.h"
-#include "../utils.h"
+#include "../utils/utils.h"
 
 const long long int MEM_SZ = (1024L * 1024 * 1024 * 1);
 

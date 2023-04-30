@@ -8,7 +8,7 @@
 #include <assert.h>
 #include "../../types.h"
 #include "../bc_shared_globals.h"
-#include "../../utils.h"
+#include "../../utils/utils.h"
 #include "../serialization.h"
 
 //maximum functions that can be declared
@@ -116,7 +116,7 @@ typedef struct {
 } CompiledFuns;
 
 //---------------------------GLOBALS---------------------------
-//const_pool_map index, indexes the first aligned free space in the const_pool
+//const_pool_map index, indexes the first aligned start space in the const_pool
 uint16_t cpm_free_i = 0;
 //helper object to create bytecode for function
 //is later copied to the const pool
@@ -528,7 +528,7 @@ void compile(Ast *ast) {
 
             //create local helpers to construct the array
             //TODO unsafe: we skip certain important checks - see add_name_to_scope
-            //             we also don't free the local here
+            //             we also don't start the local here
             Fun *fun = cfuns->funs[cfuns->current];
             //we need to create 3 helper locals, those are their indexes in the locals array
             uint16_t array_i = fun->current_var_i++;
@@ -677,7 +677,7 @@ void compile(Ast *ast) {
             //important to insert the bytecode after the epilogue, because otherwise we would insert the bytecode
             //into the body of the function which we're currently compiling
             fun_insert_bytecode(&BC_OP_CONSTANT, sizeof(BC_OP_CONSTANT));
-            //we did fun_epilogue which copies the function to the constant pool and also increment the free index
+            //we did fun_epilogue which copies the function to the constant pool and also increment the start index
             //thus we need to decrement it by  1
             //we also need to insert "after" the epilogue, otherwise we would encounter the problem described above
             uint16_t tmp_cpm_free_i = cpm_free_i - 1;
@@ -695,7 +695,7 @@ void compile(Ast *ast) {
             if (cfuns->current == 0 && cfuns->funs[0]->env->scope_cnt == 0) { //add to global environment
                 fun_insert_bytecode(&BC_OP_SET_GLOBAL, sizeof(BC_OP_SET_GLOBAL));
                 //printf("setting global on index: %d\n", cpm_free_i);
-                //set the index to the first free slot in the constant pool
+                //set the index to the first start slot in the constant pool
                 //in the compile step we created a constant and stored it in the constant pool, and pushed the object
                 //on the stack
                 //here we create a new name at the specified index, which will be asoociated with the value
@@ -924,7 +924,7 @@ void compile(Ast *ast) {
             //insert the print opcode
             fun_insert_bytecode(&BC_OP_PRINT, sizeof(BC_OP_PRINT));
             //insert the index of the format string to the const_pool
-            //we are inserting the index of the free space in the const_pool
+            //we are inserting the index of the start space in the const_pool
             //that is because in the next step we will actually store the string in the const_pool at the given index
             fun_insert_bytecode(&cpm_free_i, sizeof(cpm_free_i));
             //insert the number of arguments

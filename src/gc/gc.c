@@ -6,6 +6,7 @@
 
 #include "gc.h"
 #include "../heap/heap.h"
+#include "../cmd_config.h"
 
 //we don't want to add a new flag to the types, so we use the highest bit of the kind field
 #define MARK_FLAG 0x80 // 10000000 in binary
@@ -106,12 +107,12 @@ void sweep(Heap *heap) {
                 new_block->sz = block_size;
                 new_block->start = block_start;
                 heap->free_list = new_block;
+                heap->allocated -= block_size;
                 block_size = 0;
             }
             is_consecutive_unmarked = false;
         }
         else {
-
             //assert(*val >= VK_INTEGER && *val <= VK_OBJECT);
             if (!is_consecutive_unmarked) {
                 block_start = heap_start;
@@ -138,9 +139,11 @@ void add_aux_root(Value val) {
 
 void garbage_collect(Heap *heap) {
     //if roots are not allocated, then immediately return, because we're not using bc interpreter
+    heap_log_event(heap, 'B');
     if (roots == NULL) {
         return;
     }
     mark(heap);
     sweep(heap);
+    heap_log_event(heap, 'A');
 }

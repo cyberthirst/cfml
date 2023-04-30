@@ -20,10 +20,16 @@ typedef struct {
 } Block;
 
 typedef struct {
+    //the start of the heap
     uint8_t *heap_start;
+    //the first free byte in the heap
     uint8_t *heap_free;
+    //the list of free blocks
     Block *free_list;
+    //the total max size of the heap
     size_t heap_size;
+    //the amount of allocated bytes
+    size_t allocated;
 } Heap;
 
 void print_heap(Heap *heap);
@@ -67,6 +73,8 @@ Value construct_null(Heap *heap);
 Value construct_bc_string(Bc_String *str, Heap *heap);
 
 Value construct_bc_function(Bc_Func *func, Heap *heap);
+
+void heap_log_event(Heap *heap, char event);
 
 //BYTECODE HEAP ALLOCS
 

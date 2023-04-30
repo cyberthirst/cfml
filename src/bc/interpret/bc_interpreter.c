@@ -57,6 +57,7 @@ void bc_init() {
     roots->stack = itp->operands;
     roots->stack_sz = &itp->op_sz;
     //we allocate the null only once to save resources
+    heap_log_event(heap, 'S');
     global_null = construct_null(heap);
     add_aux_root(global_null);
 }
@@ -650,6 +651,7 @@ void bc_interpret() {
     init_frame(0, false);
     init_fun_call(0, false);
     bytecode_loop();
+    heap_log_event(heap, 'E');
     bc_free();
 }
 

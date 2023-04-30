@@ -13,7 +13,7 @@
 #include "cmd_config.h"
 
 //default heap size is 100MiB
-#define DEFAULT_HEAP_SIZE (200 * 1024 * 1024)
+#define DEFAULT_HEAP_SIZE (100 * 1024 * 1024)
 #define DEFAULT_HEAP_LOG_FILE NULL
 
 Config config = { .heap_size = DEFAULT_HEAP_SIZE,

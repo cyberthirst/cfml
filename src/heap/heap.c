@@ -3,11 +3,13 @@
 //
 
 #include <stdio.h>
+#include <time.h>
 
 #include "heap.h"
 #include "../gc/gc.h"
 #include "../utils/utils.h"
 #include "../ast/ast_interpreter.h"
+#include "../cmd_config.h"
 
 Roots *roots;
 
@@ -20,6 +22,7 @@ Heap *construct_heap(const long long int mem_sz) {
     heap->free_list->next = NULL;
     heap->free_list->sz = mem_sz;
     heap->free_list->start = heap->heap_start;
+    heap->allocated = 0;
     return heap;
 }
 
@@ -55,6 +58,9 @@ alloc_again:
         if ((*current)->sz >= sz_aligned) {
             // Found a block of sufficient size
             void *ptr = (*current)->start;
+
+            //update the total allocated bytes
+            heap->allocated += sz_aligned;
 
             // If the block is larger than needed, update it, otherwise remove it
             if ((*current)->sz > sz_aligned) {
@@ -276,6 +282,27 @@ Value construct_bc_function(Bc_Func *func, Heap *heap) {
     memcpy(bc_func, func, sizeof(Bc_Func) + func->len);
     return bc_func;*/
     return func;
+}
+
+void heap_log_event(Heap *heap, char event) {
+    if (config.heap_log_file == NULL) {
+        return;
+    }
+    // Open the log file in append mode
+    FILE *log_file = fopen(config.heap_log_file, "a");
+    if (log_file == NULL) {
+        printf("Failed to open heap log file\n");
+        return;
+    }
+
+    // Get the current time in nanoseconds
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    long long timestamp = ts.tv_sec * 1e9 + ts.tv_nsec;
+
+    fprintf(log_file, "%lld,%c,%zu\n", timestamp, event, heap->allocated);
+
+    fclose(log_file);
 }
 
 //BYTECODE HEAP ALLOCS

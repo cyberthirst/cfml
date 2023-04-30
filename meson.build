@@ -13,4 +13,6 @@ exe = executable('fml',
   'src/bc/compile/bc_compiler.c',
   'src/bc/bc_shared_globals.c',
   'src/bc/serialization.c',
+  'src/gc/gc.c',
+  'src/cmd_config.h',
   install : true)

@@ -22,6 +22,9 @@ typedef struct {
     Value *stack;
     size_t *stack_sz;
     Bc_Globals *globals;
+    Value *aux;
+    size_t aux_sz;
+
 } Roots;
 
 //global variable
@@ -29,3 +32,5 @@ typedef struct {
 extern Roots *roots;
 
 void garbage_collect(Heap *heap);
+
+void add_aux_root(Value val);

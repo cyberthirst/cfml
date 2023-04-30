@@ -98,6 +98,18 @@ void sweep(Heap *heap) {
     }
 }
 
+void add_aux_root(Value val) {
+    if (roots->aux_sz == 0) {
+        roots->aux = malloc(sizeof(Value));
+        roots->aux_sz = 1;
+    }
+    else {
+        roots->aux = realloc(roots->aux, sizeof(Value) * (roots->aux_sz + 1));
+        roots->aux_sz++;
+    }
+    roots->aux[roots->aux_sz - 1] = val;
+}
+
 void garbage_collect(Heap *heap) {
     //TODO add if here that we're running the bc interpreter
     // for AST interpreter we don't mark the roots and thus GC doens't make any sense

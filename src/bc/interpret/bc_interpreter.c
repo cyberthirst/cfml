@@ -51,7 +51,7 @@ void bc_init() {
         globals.values[i] = global_null;
     }
     //set the roots for the GC
-    roots = malloc(sizeof(Roots));
+    roots = calloc(1, sizeof(Roots));
     roots->frames = itp->frames;
     roots->frames_sz = &itp->frames_sz;
     roots->stack = itp->operands;
@@ -70,6 +70,7 @@ void bc_free() {
     heap_free(&heap);
     free(globals.values);
     free(globals.indexes);
+    free(roots->aux); 
     free(roots);
 }
 

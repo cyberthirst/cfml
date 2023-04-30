@@ -10,15 +10,15 @@
 #include "bc/interpret/bc_interpreter.h"
 #include "arena.h"
 #include "bc/compile/bc_compiler.h"
+#include "cmd_config.h"
 
-#define DEFAULT_HEAP_SIZE 4096
-#define DEFAULT_HEAP_LOG_FILE "heap_log.csv"
+//default heap size is 100MiB
+#define DEFAULT_HEAP_SIZE (100 * 1024 * 1024)
+#define DEFAULT_HEAP_LOG_FILE NULL
 
-enum { ACTION_AST_INTERPRET, ACTION_BC_INTERPRET, ACTION_RUN, ACTION_BC_COMPILE } action = ACTION_AST_INTERPRET;
-char *source_file = NULL;
-long long int heap_size = DEFAULT_HEAP_SIZE;
-char *heap_log_file = DEFAULT_HEAP_LOG_FILE;
-
+Config config = { .heap_size = DEFAULT_HEAP_SIZE,
+                  .heap_log_file = DEFAULT_HEAP_LOG_FILE,
+                  .source_file = NULL, .action = ACTION_AST_INTERPRET };
 
 /*
    FROM REFENRENCE IMPL
@@ -50,8 +50,6 @@ static Str read_file(Arena *arena, const char *name) {
 	return (Str) { .str = buf, .len = fsize };
 }
 
-
-
 void usage(const char *progname) {
     fprintf(stderr, "Usage: %s [options] <file>\n", progname);
     fprintf(stderr, "Options:\n");
@@ -67,7 +65,7 @@ void usage(const char *progname) {
 Ast * get_ast(Arena *arena){
  
 
-    Str src = read_file(arena, source_file);
+    Str src = read_file(arena, config.source_file);
 
     if (src.str == NULL) {
         arena_destroy(arena);
@@ -97,16 +95,16 @@ int main(int argc, char *argv[]) {
     }
 
     if (strcmp(argv[optind], "ast_interpret") == 0) {
-        action = ACTION_AST_INTERPRET;
+        config.action = ACTION_AST_INTERPRET;
         optind++;
     } else if (strcmp(argv[optind], "bc_interpret") == 0) {
-        action = ACTION_BC_INTERPRET;
+        config.action = ACTION_BC_INTERPRET;
         optind++;
     } else if (strcmp(argv[optind], "run") == 0) {
-        action = ACTION_RUN;
+        config.action = ACTION_RUN;
         optind++;
     } else if (strcmp(argv[optind], "bc_compile") == 0) {
-        action = ACTION_BC_COMPILE;
+        config.action = ACTION_BC_COMPILE;
         optind++;
     } else {
         usage(argv[0]);
@@ -116,13 +114,15 @@ int main(int argc, char *argv[]) {
             if (optind + 1 >= argc) {
                 usage(argv[0]);
             }
-            heap_size = atoi(argv[optind + 1]);
+            config.heap_size = atoi(argv[optind + 1]);
+            // convert to bytes as the input is in MiB
+            config.heap_size = config.heap_size * 1024 * 1024;
             optind++;
         } else if (strcmp(argv[optind], "--heap-log") == 0) {
             if (optind + 1 >= argc) {
                 usage(argv[0]);
             }
-            heap_log_file = argv[optind + 1];
+            config.heap_log_file = argv[optind + 1];
             optind++;
         } else {
             usage(argv[0]);
@@ -131,12 +131,12 @@ int main(int argc, char *argv[]) {
     if (optind + 1 != argc) {
         usage(argv[0]);
     }
-    source_file = argv[optind];
+    config.source_file = argv[optind];
 
     Arena arena;
     arena_init(&arena);
 
-    switch (action) {
+    switch (config.action) {
         case ACTION_AST_INTERPRET: {
 
 	        Ast *ast = get_ast(&arena);
@@ -150,7 +150,7 @@ int main(int argc, char *argv[]) {
         }
         case ACTION_BC_INTERPRET: {
             //printf("Running the bc_interpreter on source file %s\n", source_file);
-            deserialize_bc_file(source_file);
+            deserialize_bc_file(config.source_file);
             bc_interpret();
             break;
         }
@@ -169,7 +169,7 @@ int main(int argc, char *argv[]) {
         }
 
         default:
-            fprintf(stderr, "Invalid action %d\n", action);
+            fprintf(stderr, "Invalid action %d\n", config.action);
             exit(EXIT_FAILURE);
     }
     arena_destroy(&arena);

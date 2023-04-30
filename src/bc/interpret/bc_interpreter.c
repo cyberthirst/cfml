@@ -12,6 +12,7 @@
 #include "../../utils/utils.h"
 #include "../bc_shared_globals.h"
 #include "../../gc/gc.h"
+#include "../../cmd_config.h"
 
 //we can have max 1024 * 16 ptrs to the heap
 #define MAX_OPERANDS (1024 * 16)
@@ -43,8 +44,7 @@ void bc_init() {
     itp->frames_sz = 0;
     itp->operands = malloc(sizeof(void *) * MAX_OPERANDS);
     itp->op_sz = 0;
-    //TODO pass --heap-size param from the cmd
-    heap = construct_heap(MEM_SZ);
+    heap = construct_heap(config.heap_size);
     //array that acts like a hash map - we just allocate as big array as there are constants
     globals.values = malloc(sizeof(void *) * const_pool_count);
     //TODO could we use memset here or smth similar?
@@ -58,8 +58,8 @@ void bc_init() {
     roots->stack = itp->operands;
     roots->stack_sz = &itp->op_sz;
     //we allocate the null only once to save resources
-    //TODO maybe this should be a root for the GC?
     global_null = construct_null(heap);
+    add_aux_root(global_null);
 }
 
 void bc_free() {
@@ -71,6 +71,7 @@ void bc_free() {
     heap_free(&heap);
     free(globals.values);
     free(globals.indexes);
+    free(roots);
 }
 
 Value pop_operand() {

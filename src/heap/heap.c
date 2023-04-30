@@ -9,15 +9,17 @@
 #include "../utils/utils.h"
 #include "../ast/ast_interpreter.h"
 
+Roots *roots;
+
 Heap *construct_heap(const long long int mem_sz) {
     Heap *heap = malloc(sizeof(Heap));
-    heap->heap_start = malloc(MEM_SZ);
+    heap->heap_start = calloc(mem_sz, sizeof(uint8_t));
     heap->heap_free = heap->heap_start;
+    heap->heap_size = mem_sz;
     heap->free_list = malloc(sizeof(Block));
     heap->free_list->next = NULL;
-    heap->free_list->sz = MEM_SZ;
+    heap->free_list->sz = mem_sz;
     heap->free_list->start = heap->heap_start;
-    heap->heap_size = 0;
     return heap;
 }
 
@@ -36,7 +38,7 @@ void heap_free(Heap **heap) {
 }
 
 void *heap_alloc(size_t sz, Heap *heap) {
-    bool gc = false;
+    bool gc_performed = false;
     // Adjust the requested size for alignment
     size_t sz_aligned = sz;
     size_t alignment = 8; // Align to 8 bytes
@@ -46,7 +48,7 @@ void *heap_alloc(size_t sz, Heap *heap) {
     }
     Block **current;
 alloc_again:
-    garbage_collect(heap);
+    //garbage_collect(heap);
     current = &(heap->free_list);
     // Try to find a start block of sufficient size
     while (*current != NULL) {
@@ -69,17 +71,14 @@ alloc_again:
         }
         current = &((*current)->next);
     }
-    /*
-    // TODO uncomment this when testing is finished - currently we call gc for every allocation
-    garbage_collect(heap);
-    if (!gc) {
-        gc = true;
+    if (!gc_performed) {
+        garbage_collect(heap);
+        gc_performed = true;
         goto alloc_again;
-    }*/
-
-    // No start block of sufficient size was found
+    }
+    // No block of sufficient size was found
     printf("Heap is full, exiting.\n");
-    printf("Max heap size is: %ld, and current heap size is: %ld\n", MEM_SZ, heap->heap_size);
+    printf("Max heap size is: %ld, and current request is: %ld\n", heap->heap_size, sz);
     exit(1);
 }
 
@@ -91,35 +90,37 @@ size_t get_sizeof_value(Value val) {
             sz += sizeof(Integer);
             break;
         }
-        case VK_BOOLEAN: {
-            sz += sizeof(Boolean);
-            break;
-        }
         case VK_NULL: {
             sz += sizeof(Null);
             break;
         }
-        case VK_STRING: {
-            Bc_String *str = (Bc_String *) sz;
-            sz += sizeof(Bc_String) + str->len;
-            break;
-        }
-        case VK_OBJECT: {
-            Object *obj = (Object *) sz;
-            sz += sizeof(Object) + sizeof(Field) * obj->field_cnt;
-            break;
-        }
         case VK_FUNCTION: {
-            Bc_Func *func = (Bc_Func *) sz;
+            Bc_Func *func = (Bc_Func *) val;
             sz += sizeof(Bc_Func) + func->len;
             break;
         }
+        case VK_BOOLEAN: {
+            sz += sizeof(Boolean);
+            break;
+        }
+        case VK_ARRAY: {
+            Array *arr = (Array *) val;
+            sz += sizeof(Array) + sizeof(Value) * arr->size;
+            break;
+        }
+        case VK_OBJECT: {
+            Object *obj = (Object *) val;
+            sz += sizeof(Object) + sizeof(Field) * obj->field_cnt;
+            break;
+        }
+
         default: {
+            uint8_t t = *val;
             UNREACHABLE;
         }
     }
     //align to 8 bytes
-    size_t diff = 8 - ((uintptr_t)val % 8);
+    size_t diff = 8 - ((uintptr_t)(val + sz) % 8);
     if (diff != 8) {
         sz += diff;
     }

@@ -34,7 +34,6 @@ typedef struct {
 Bc_Interpreter *itp;
 Heap *heap;
 Value global_null;
-Roots *roots;
 
 void bc_init() {
     itp = malloc(sizeof(Bc_Interpreter));

@@ -17,8 +17,8 @@ typedef enum {
     VK_FUNCTION = 0x3,
     VK_BOOLEAN = 0x04,
     VK_CLASS = 0x05,
-    VK_ARRAY,
-    VK_OBJECT,
+    VK_ARRAY = 0x06,
+    VK_OBJECT = 0x07,
 } ValueKind;
 
 typedef enum {

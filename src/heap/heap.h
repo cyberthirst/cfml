@@ -14,6 +14,7 @@ extern const long long int MEM_SZ;
 
 typedef struct {
     struct Block *next;
+    //the amount of free bytes in this block
     size_t sz;
     uint8_t *start;
 } Block;

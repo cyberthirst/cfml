@@ -6,7 +6,7 @@
 #include "../parser.h"
 #include "../utils/utils.h"
 
-const long long int MEM_SZ = (1024L * 1024 * 1024 * 1);
+const long long int MEM_SZ = (1024L * 1024 * 1024 * 4);
 
 IState* init_interpreter() {
     IState *state = malloc(sizeof(IState));

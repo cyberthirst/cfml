@@ -8,13 +8,12 @@
 #include "../heap/heap.h"
 #include "../cmd_config.h"
 
-size_t total_marks = 0;
-uint8_t * all_marks[1000];
-
+//suppose we're sweeping the heap and we reached a marked array
+//we need to unmark it, however we can't unmark its values
+//if we did, the values would be unmarked and if they are stored after the array then they would be swept, ie
+//they would be freed into the free list
 uint8_t * unmark_in_future[1000];
 size_t unmark_in_future_cnt = 0;
-
-size_t tmp_block_size = 0;
 
 bool is_on_heap(Value val, Heap *heap) {
     return val >= heap->heap_start && val < (heap->heap_start + heap->total_size);
@@ -32,8 +31,6 @@ void mark_value(Value val, Heap *heap) {
         return;
     }
     assert(*val >= VK_INTEGER && *val <= VK_OBJECT);
-    all_marks[total_marks] = val;
-    total_marks++;
     switch (*val) {
         case VK_ARRAY: {
             MARK(val);
@@ -57,7 +54,7 @@ void mark_value(Value val, Heap *heap) {
     }
 }
 
-void mark(Heap *heap) {
+void mark_from_roots(Heap *heap) {
     Roots *rt = roots;
     // Mark frames
     for (size_t i = 0; i < *(roots->frames_sz); ++i) {
@@ -89,14 +86,6 @@ void dealloc_free_list(Heap *heap) {
     heap->free_list = NULL;
 }
 
-bool is_in_marks(Value val) {
-    for (size_t i = 0; i < 1000; ++i) {
-        if (all_marks[i] == val) {
-            return true;
-        }
-    }
-    return false;
-}
 void unmark(Value val, Heap *heap) {
     /*
      * it can happen that we call unmark on already unmarked value
@@ -111,7 +100,6 @@ void unmark(Value val, Heap *heap) {
     UNMARK(val);
     //printf("unmarking %p, index: %lu\n", val, total_marks);
     assert(*val >= 0 && *val <= 7);
-    total_marks--;
     switch (*val) {
         case VK_ARRAY: {
             Array *arr = (Array *) val;
@@ -141,14 +129,10 @@ void sweep(Heap *heap) {
     dealloc_free_list(heap);
     while (heap_start < heap_end) {
         Value val = (Value)heap_start;
-        if (heap_start - val == 1440)
-            printf("found\n");
         if (IS_MARKED(val)) {
             //is marked thus shouldn't be freed, therefore we just skip it
             UNMARK(val);
-            total_marks--;
             unmark_in_future[unmark_in_future_cnt++] = val;
-            assert(is_in_marks(val));
             assert(*heap_start >= VK_INTEGER && *heap_start <= VK_OBJECT);
             if (is_consecutive_unmarked){
                 Block *new_block = malloc(sizeof(Block));
@@ -158,13 +142,11 @@ void sweep(Heap *heap) {
                 heap->free_list = new_block;
                 heap->allocated -= block_size;
                 memset(block_start, 0x7f, block_size);
-                //printf("freed block, start: %p, end: %p, size: %lu\n", block_start, heap_start, block_size);
                 block_size = 0;
             }
             is_consecutive_unmarked = false;
         }
         else {
-            //assert(*heap_start >= VK_INTEGER && *heap_start <= VK_OBJECT);
             if (!is_consecutive_unmarked) {
                 block_start = heap_start;
             }
@@ -185,35 +167,18 @@ void pop_aux_root(size_t n) {
     roots->aux_sz -= n;
 }
 
-void print_all_marks() {
-    for (size_t i = 0; i < total_marks; ++i) {
-        if (all_marks[i] != NULL) {
-            printf("%p\n", all_marks[i]);
-        }
-    }
-}
-
 void garbage_collect(Heap *heap) {
     //if roots are not allocated, then immediately return, because we're not using bc interpreter
     if (roots == NULL) {
         return;
     }
-    printf("garbage collecting\n");
     heap_log_event(heap, 'B');
-    assert(total_marks == 0);
-    //validate_integrity_of_tags(heap);
-    printf("marking\n");
-    mark(heap);
-    //print_all_marks();
-    printf("sweeping\n");
+    mark_from_roots(heap);
     sweep(heap);
     for (size_t i = 0; i < unmark_in_future_cnt; ++i) {
         unmark(unmark_in_future[i], heap);
     }
     memset(unmark_in_future, 0, sizeof(unmark_in_future));
-    memset(all_marks, 0, sizeof(all_marks));
     unmark_in_future_cnt = 0;
-    assert(total_marks == 0);
-    //validate_integrity_of_tags(heap);
     heap_log_event(heap, 'A');
 }

@@ -24,9 +24,9 @@ typedef struct {
     uint8_t *ip;
     Frame *frames;
     size_t frames_sz;
-    //operands stack
+    //operand_stack stack
     //ptrs to the heap
-    Value *operands;
+    Value *operand_stack;
     size_t op_sz;
 } Bc_Interpreter;
 
@@ -41,7 +41,7 @@ void bc_init() {
     itp->frames = malloc(sizeof(Frame) * MAX_FRAMES);
     //we have 1 frame at the beginning for global frame
     itp->frames_sz = 0;
-    itp->operands = malloc(sizeof(void *) * MAX_OPERANDS);
+    itp->operand_stack = malloc(sizeof(void *) * MAX_OPERANDS);
     itp->op_sz = 0;
     heap = construct_heap(config.heap_size);
     //array that acts like a hash map - we just allocate as big array as there are constants
@@ -54,30 +54,30 @@ void bc_init() {
     roots = calloc(1, sizeof(Roots));
     roots->frames = itp->frames;
     roots->frames_sz = &itp->frames_sz;
-    roots->stack = itp->operands;
+    roots->stack = itp->operand_stack;
     roots->stack_sz = &itp->op_sz;
     //we allocate the null only once to save resources
     heap_log_event(heap, 'S');
     global_null = construct_null(heap);
-    add_aux_root(global_null);
+    push_aux_root(global_null);
 }
 
 void bc_free() {
     free(itp->frames);
-    free(itp->operands);
+    free(itp->operand_stack);
     free(itp);
     free(const_pool);
     free(const_pool_map);
     heap_free(&heap);
     free(globals.values);
     free(globals.indexes);
-    free(roots->aux); 
+    //free(roots->aux);
     free(roots);
 }
 
 Value pop_operand() {
     assert(itp->op_sz > 0);
-    return itp->operands[--itp->op_sz];
+    return itp->operand_stack[--itp->op_sz];
 }
 
 void pop_n_operands(size_t n) {
@@ -87,12 +87,12 @@ void pop_n_operands(size_t n) {
 
 Value peek_operand() {
     assert(itp->op_sz > 0);
-    return itp->operands[itp->op_sz - 1];
+    return itp->operand_stack[itp->op_sz - 1];
 }
 
 void push_operand(uint8_t *value) {
     assert(itp->op_sz < MAX_OPERANDS);
-    itp->operands[itp->op_sz++] = value;
+    itp->operand_stack[itp->op_sz++] = value;
 }
 
 void push_frame() {
@@ -218,15 +218,15 @@ void exec_print() {
     Bc_String *prnt = (Bc_String *)const_pool_map[index];
     assert(prnt->kind == VK_STRING);
 
-    //pop all the operands at once, see the comment before print_val
+    //pop all the operand_stack at once, see the comment before print_val
     pop_n_operands(num_args);
     size_t tilda = 0;
     for (size_t i = 0; i < prnt->len; i++) {
         if (prnt->value[i] == '~') {
-            //we popped num_args operands from the stack
+            //we popped num_args operand_stack from the stack
             //thus the current stack pointer points to the first argument of the print
             //arg1 is the first field of the "print_args" array thus we only add tilda
-            print_val(itp->operands[itp->op_sz + tilda]);
+            print_val(itp->operand_stack[itp->op_sz + tilda]);
             //print_val((Value)pop_operand());
             tilda++;
         }
@@ -321,7 +321,9 @@ void exec_call_function() {
 
 void exec_array() {
     Value init_val = pop_operand();
+    push_aux_root(init_val);
     Integer *size = (Integer *)pop_operand();
+    push_aux_root((Value)size);
     assert(size->kind == VK_INTEGER);
     assert(size->val >= 0);
     Array *array = (Array *)construct_array(size->val, heap);
@@ -329,6 +331,7 @@ void exec_array() {
         array->val[i] = init_val;
     }
     push_operand((uint8_t *)array);
+    pop_aux_root(2);
 }
 
 void exec_object() {
@@ -638,7 +641,7 @@ void bytecode_loop(){
                 printf("Unknown instruction: 0x%02X\n", *itp->ip);
                 exit(1);
         }
-        print_op_stack(itp->operands, itp->op_sz);
+        print_op_stack(itp->operand_stack, itp->op_sz);
     }
 }
 

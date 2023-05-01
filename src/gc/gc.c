@@ -8,29 +8,32 @@
 #include "../heap/heap.h"
 #include "../cmd_config.h"
 
-//we don't want to add a new flag to the types, so we use the highest bit of the kind field
-#define MARK_FLAG 0x80 // 10000000 in binary
-#define MARK(val) (*(val) |= MARK_FLAG)
-#define UNMARK(val) (*(val) &= ~MARK_FLAG)
-#define IS_MARKED(val) (*(val) & MARK_FLAG)
-#define GET_KIND(val) (*(val) & ~MARK_FLAG)
+size_t total_marks = 0;
+uint8_t * all_marks[1000];
+
+uint8_t * unmark_in_future[1000];
+size_t unmark_in_future_cnt = 0;
+
+size_t tmp_block_size = 0;
 
 bool is_on_heap(Value val, Heap *heap) {
-    return val >= heap->heap_start && val < (heap->heap_start + heap->heap_size);
+    return val >= heap->heap_start && val < (heap->heap_start + heap->total_size);
 }
 
-//TODO passing the heap only for testing purposes (see the assert)
-// after testing is done, remove the heap parameter
 void mark_value(Value val, Heap *heap) {
-    //assert(val >= heap->heap_start && val < (heap->heap_start + heap->heap_size));
+    //some roots can point to the constant pool, which is not part of the heap
+    //we don't manage the constant pool, so we don't need to mark it
     if (!is_on_heap(val, heap)) {
         return;
     }
     if (IS_MARKED(val)) {
+        assert(*val - 128 >= VK_INTEGER && *val - 128 <= VK_OBJECT);
         // Already marked, no need to traverse again
         return;
     }
-
+    assert(*val >= VK_INTEGER && *val <= VK_OBJECT);
+    all_marks[total_marks] = val;
+    total_marks++;
     switch (*val) {
         case VK_ARRAY: {
             MARK(val);
@@ -69,6 +72,7 @@ void mark(Heap *heap) {
         mark_value(roots->stack[i], heap);
     }
 
+    // Mark auxiliary vals (like global null)
     for (size_t i = 0; i < roots->aux_sz; ++i) {
         mark_value(roots->aux[i], heap);
     }
@@ -85,22 +89,67 @@ void dealloc_free_list(Heap *heap) {
     heap->free_list = NULL;
 }
 
+bool is_in_marks(Value val) {
+    for (size_t i = 0; i < 1000; ++i) {
+        if (all_marks[i] == val) {
+            return true;
+        }
+    }
+    return false;
+}
+void unmark(Value val, Heap *heap) {
+    /*
+     * it can happen that we call unmark on already unmarked value
+     * - eg an array contains elements
+     * - those elements are pointers to the heap
+     * - these heap pointers are also analyzed by the gc
+     * - if the pointer is stored "before" the array pointer then it will be analyzed before and also unmarked before
+     */
+    if (!IS_MARKED(val)) {
+        return;
+    }
+    UNMARK(val);
+    //printf("unmarking %p, index: %lu\n", val, total_marks);
+    assert(*val >= 0 && *val <= 7);
+    total_marks--;
+    switch (*val) {
+        case VK_ARRAY: {
+            Array *arr = (Array *) val;
+            for (size_t i = 0; i < arr->size; ++i) {
+                unmark(arr->val[i], heap);
+            }
+            break;
+        }
+        case VK_OBJECT: {
+            Object *obj = (Object *) val;
+            for (size_t i = 0; i < obj->field_cnt; ++i) {
+                unmark(obj->val[i].val, heap);
+            }
+            break;
+        }
+    }
+}
+
 void sweep(Heap *heap) {
     uint8_t *heap_start = heap->heap_start;
-    uint8_t *heap_end = heap->heap_start + heap->heap_size;
+    uint8_t *heap_end = heap->heap_start + heap->total_size;
     bool is_consecutive_unmarked = false;
     size_t block_size = 0;
     uint8_t *block_start = NULL;
     //TODO would be interesting to use the free_list to avoid checking the values in the
     // range of the blocks in the free_list
     dealloc_free_list(heap);
-
     while (heap_start < heap_end) {
         Value val = (Value)heap_start;
+        if (heap_start - val == 1440)
+            printf("found\n");
         if (IS_MARKED(val)) {
             //is marked thus shouldn't be freed, therefore we just skip it
             UNMARK(val);
-            assert(*val >= VK_INTEGER && *val <= VK_OBJECT);
+            total_marks--;
+            unmark_in_future[unmark_in_future_cnt++] = val;
+            assert(is_in_marks(val));
+            assert(*heap_start >= VK_INTEGER && *heap_start <= VK_OBJECT);
             if (is_consecutive_unmarked){
                 Block *new_block = malloc(sizeof(Block));
                 new_block->next = heap->free_list;
@@ -108,16 +157,17 @@ void sweep(Heap *heap) {
                 new_block->start = block_start;
                 heap->free_list = new_block;
                 heap->allocated -= block_size;
+                memset(block_start, 0x7f, block_size);
+                //printf("freed block, start: %p, end: %p, size: %lu\n", block_start, heap_start, block_size);
                 block_size = 0;
             }
             is_consecutive_unmarked = false;
         }
         else {
-            //assert(*val >= VK_INTEGER && *val <= VK_OBJECT);
+            //assert(*heap_start >= VK_INTEGER && *heap_start <= VK_OBJECT);
             if (!is_consecutive_unmarked) {
                 block_start = heap_start;
             }
-            //TODO 2 call to get_sizeof_value, store the result in a variable
             block_size += get_sizeof_value(val);
             is_consecutive_unmarked = true;
         }
@@ -125,25 +175,45 @@ void sweep(Heap *heap) {
     }
 }
 
-void add_aux_root(Value val) {
-    if (roots->aux_sz == 0) {
-        roots->aux = malloc(sizeof(Value));
-        roots->aux_sz = 1;
+void push_aux_root(Value val) {
+    assert(roots->aux_sz < 64);
+    roots->aux[roots->aux_sz++] = val;
+}
+
+void pop_aux_root(size_t n) {
+    assert(roots->aux_sz - n >= 0);
+    roots->aux_sz -= n;
+}
+
+void print_all_marks() {
+    for (size_t i = 0; i < total_marks; ++i) {
+        if (all_marks[i] != NULL) {
+            printf("%p\n", all_marks[i]);
+        }
     }
-    else {
-        roots->aux = realloc(roots->aux, sizeof(Value) * (roots->aux_sz + 1));
-        roots->aux_sz++;
-    }
-    roots->aux[roots->aux_sz - 1] = val;
 }
 
 void garbage_collect(Heap *heap) {
     //if roots are not allocated, then immediately return, because we're not using bc interpreter
-    heap_log_event(heap, 'B');
     if (roots == NULL) {
         return;
     }
+    printf("garbage collecting\n");
+    heap_log_event(heap, 'B');
+    assert(total_marks == 0);
+    //validate_integrity_of_tags(heap);
+    printf("marking\n");
     mark(heap);
+    //print_all_marks();
+    printf("sweeping\n");
     sweep(heap);
+    for (size_t i = 0; i < unmark_in_future_cnt; ++i) {
+        unmark(unmark_in_future[i], heap);
+    }
+    memset(unmark_in_future, 0, sizeof(unmark_in_future));
+    memset(all_marks, 0, sizeof(all_marks));
+    unmark_in_future_cnt = 0;
+    assert(total_marks == 0);
+    //validate_integrity_of_tags(heap);
     heap_log_event(heap, 'A');
 }

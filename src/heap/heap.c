@@ -17,7 +17,7 @@ Heap *construct_heap(const long long int mem_sz) {
     Heap *heap = malloc(sizeof(Heap));
     heap->heap_start = calloc(mem_sz, sizeof(uint8_t));
     heap->heap_free = heap->heap_start;
-    heap->heap_size = mem_sz;
+    heap->total_size = mem_sz;
     heap->free_list = malloc(sizeof(Block));
     heap->free_list->next = NULL;
     heap->free_list->sz = mem_sz;
@@ -38,54 +38,6 @@ void heap_free(Heap **heap) {
     free((*heap)->heap_start);
     free(*heap);
     *heap = NULL;
-}
-
-void *heap_alloc(size_t sz, Heap *heap) {
-    bool gc_performed = false;
-    // Adjust the requested size for alignment
-    size_t sz_aligned = sz;
-    size_t alignment = 8; // Align to 8 bytes
-    size_t diff = sz_aligned % alignment;
-    if (diff != 0) {
-        sz_aligned += alignment - diff; // Adjust the size to the next multiple of alignment
-    }
-    Block **current;
-alloc_again:
-    //garbage_collect(heap);
-    current = &(heap->free_list);
-    // Try to find a start block of sufficient size
-    while (*current != NULL) {
-        if ((*current)->sz >= sz_aligned) {
-            // Found a block of sufficient size
-            void *ptr = (*current)->start;
-
-            //update the total allocated bytes
-            heap->allocated += sz_aligned;
-
-            // If the block is larger than needed, update it, otherwise remove it
-            if ((*current)->sz > sz_aligned) {
-                (*current)->start += sz_aligned;
-                (*current)->sz -= sz_aligned;
-            } else {
-                Block *next = (*current)->next;
-                //we don't start the data, the heap array stays intact
-                free(*current);
-                *current = next;
-            }
-
-            return ptr;
-        }
-        current = &((*current)->next);
-    }
-    if (!gc_performed) {
-        garbage_collect(heap);
-        gc_performed = true;
-        goto alloc_again;
-    }
-    // No block of sufficient size was found
-    printf("Heap is full, exiting.\n");
-    printf("Max heap size is: %ld, and current request is: %ld\n", heap->heap_size, sz);
-    exit(1);
 }
 
 //TODO this function should be used on multiple places, not only in gc, refactor
@@ -121,16 +73,75 @@ size_t get_sizeof_value(Value val) {
         }
 
         default: {
-            uint8_t t = *val;
-            UNREACHABLE;
+            while (*val == 0x7f) {
+                sz++;
+                val++;
+            }
         }
     }
     //align to 8 bytes
-    size_t diff = 8 - ((uintptr_t)(val + sz) % 8);
-    if (diff != 8) {
-        sz += diff;
+    //size_t diff = 8 - ((uintptr_t)(val + sz) % 8);
+    size_t diff = sz % 8;
+    if (diff != 0) {
+        sz += 8 - diff;
     }
     return sz;
+}
+
+void validate_integrity_of_tags(Heap *heap) {
+    uint8_t *heap_start = heap->heap_start;
+    uint8_t *heap_end = heap->heap_start + heap->total_size;
+    while (heap_start < heap_end) {
+        Value val = (Value) heap_start;
+        assert(*val >= 0 && *val <= 7);
+        heap_start += get_sizeof_value(val);
+    }
+}
+
+void *heap_alloc(size_t sz, Heap *heap) {
+    bool gc_performed = false;
+    // Adjust the requested size for alignment
+    size_t sz_aligned = sz;
+    size_t alignment = 8; // Align to 8 bytes
+    size_t diff = sz_aligned % alignment;
+    if (diff != 0) {
+        sz_aligned += alignment - diff; // Adjust the size to the next multiple of alignment
+    }
+    Block **current;
+alloc_again:
+    current = &(heap->free_list);
+    // Try to find a start block of sufficient size
+    while (*current != NULL) {
+        if ((*current)->sz >= sz_aligned) {
+            // Found a block of nsufficient size
+            void *ptr = (*current)->start;
+
+            //update the total allocated bytes
+            heap->allocated += sz_aligned;
+
+            // If the block is larger than needed, update it, otherwise remove it
+            if ((*current)->sz > sz_aligned) {
+                (*current)->start += sz_aligned;
+                (*current)->sz -= sz_aligned;
+            } else {
+                Block *next = (*current)->next;
+                //we don't start the data, the heap array stays intact
+                free(*current);
+                *current = next;
+            }
+            return ptr;
+        }
+        current = &((*current)->next);
+    }
+    if (!gc_performed) {
+        garbage_collect(heap);
+        gc_performed = true;
+        goto alloc_again;
+    }
+    // No block of sufficient size was found
+    printf("Heap is full, exiting.\n");
+    printf("Max heap size is: %ld, and current request is: %ld\n", heap->total_size, sz);
+    exit(1);
 }
 
 //TODO add printing of all types

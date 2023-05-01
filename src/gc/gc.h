@@ -22,7 +22,7 @@ typedef struct {
     Value *stack;
     size_t *stack_sz;
     Bc_Globals *globals;
-    Value *aux;
+    Value aux[64];
     size_t aux_sz;
 
 } Roots;
@@ -33,4 +33,6 @@ extern Roots *roots;
 
 void garbage_collect(Heap *heap);
 
-void add_aux_root(Value val);
+void push_aux_root(Value val);
+
+void pop_aux_root(size_t n);

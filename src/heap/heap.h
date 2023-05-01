@@ -7,8 +7,12 @@
 #include <stdint.h>
 #include "../types.h"
 
-//#include "../ast/ast_interpreter.h"
-//#include "../bc/bc_interpreter.h"
+//we don't want to add a new flag to the types, so we use the highest bit of the kind field
+#define MARK_FLAG 0x80 // 10000000 in binary
+#define MARK(val) (*(val) |= MARK_FLAG)
+#define UNMARK(val) (*(val) &= ~MARK_FLAG)
+#define IS_MARKED(val) (*(val) & MARK_FLAG)
+#define GET_KIND(val) (*(val) & ~MARK_FLAG)
 
 extern const long long int MEM_SZ;
 
@@ -27,7 +31,7 @@ typedef struct {
     //the list of free blocks
     Block *free_list;
     //the total max size of the heap
-    size_t heap_size;
+    size_t total_size;
     //the amount of allocated bytes
     size_t allocated;
 } Heap;
@@ -75,6 +79,8 @@ Value construct_bc_string(Bc_String *str, Heap *heap);
 Value construct_bc_function(Bc_Func *func, Heap *heap);
 
 void heap_log_event(Heap *heap, char event);
+
+void validate_integrity_of_tags(Heap *heap);
 
 //BYTECODE HEAP ALLOCS
 

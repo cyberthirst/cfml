@@ -714,7 +714,7 @@ void compile(Ast *ast) {
                 fun_insert_bytecode(&cvar, sizeof(cvar));
                 add_name_to_scope(ad->name, cvar, false);
             }
-            //for some reason the operands are only peeked, not popped
+            //for some reason the operand_stack are only peeked, not popped
             //fun_insert_bytecode(&BC_OP_DROP, sizeof(BC_OP_DROP));
             return;
         }

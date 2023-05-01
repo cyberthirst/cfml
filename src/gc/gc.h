@@ -24,7 +24,7 @@ typedef struct {
     Bc_Globals *globals;
     Value aux[64];
     size_t aux_sz;
-
+    size_t const_pool_count;
 } Roots;
 
 //global variable

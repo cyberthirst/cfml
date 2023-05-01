@@ -56,6 +56,8 @@ void bc_init() {
     roots->frames_sz = &itp->frames_sz;
     roots->stack = itp->operand_stack;
     roots->stack_sz = &itp->op_sz;
+    roots->globals = &globals;
+    roots->const_pool_count = const_pool_count;
     //we allocate the null only once to save resources
     heap_log_event(heap, 'S');
     global_null = construct_null(heap);

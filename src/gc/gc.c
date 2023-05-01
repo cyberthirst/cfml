@@ -73,6 +73,11 @@ void mark_from_roots(Heap *heap) {
     for (size_t i = 0; i < roots->aux_sz; ++i) {
         mark_value(roots->aux[i], heap);
     }
+
+    // Mark globals
+    for (size_t i = 0; i < roots->const_pool_count; ++i) {
+        mark_value(roots->globals->values[i], heap);
+    }
 }
 
 void dealloc_free_list(Heap *heap) {
@@ -118,6 +123,16 @@ void unmark(Value val, Heap *heap) {
     }
 }
 
+void add_block(Heap *heap, uint8_t *block_start, size_t block_size) {
+    Block *new_block = malloc(sizeof(Block));
+    new_block->next = heap->free_list;
+    new_block->sz = block_size;
+    new_block->start = block_start;
+    heap->free_list = new_block;
+    heap->allocated -= block_size;
+    memset(block_start, 0x7f, block_size);
+}
+
 void sweep(Heap *heap) {
     uint8_t *heap_start = heap->heap_start;
     uint8_t *heap_end = heap->heap_start + heap->total_size;
@@ -135,13 +150,8 @@ void sweep(Heap *heap) {
             unmark_in_future[unmark_in_future_cnt++] = val;
             assert(*heap_start >= VK_INTEGER && *heap_start <= VK_OBJECT);
             if (is_consecutive_unmarked){
-                Block *new_block = malloc(sizeof(Block));
-                new_block->next = heap->free_list;
-                new_block->sz = block_size;
-                new_block->start = block_start;
-                heap->free_list = new_block;
-                heap->allocated -= block_size;
-                memset(block_start, 0x7f, block_size);
+                assert(block_start + block_size == heap_start);
+                add_block(heap, block_start, block_size);
                 block_size = 0;
             }
             is_consecutive_unmarked = false;
@@ -154,6 +164,9 @@ void sweep(Heap *heap) {
             is_consecutive_unmarked = true;
         }
         heap_start += get_sizeof_value(val);
+    }
+    if (is_consecutive_unmarked) {
+        add_block(heap, block_start, block_size);
     }
 }
 

@@ -16,6 +16,7 @@ Roots *roots;
 Heap *construct_heap(const long long int mem_sz) {
     Heap *heap = malloc(sizeof(Heap));
     heap->heap_start = calloc(mem_sz, sizeof(uint8_t));
+    memset(heap->heap_start, 0x7f, mem_sz);
     heap->heap_free = heap->heap_start;
     heap->total_size = mem_sz;
     heap->free_list = malloc(sizeof(Block));

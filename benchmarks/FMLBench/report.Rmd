@@ -1,0 +1,267 @@
+---
+title: "FML implementation performance evaluation"
+author: "skrabmir"
+date: "1/5/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include=FALSE}
+load_or_install <- function(package) {
+    if (!require(package, character.only = TRUE)) {
+        install.packages(package)
+        if (!require(package, character.only = TRUE)) {
+            stop(paste0("Cannot install package ", package));
+        }
+    }
+}
+
+load_or_install("dplyr")
+load_or_install("readr")
+load_or_install("tidyr")
+load_or_install("ggplot2")
+load_or_install("scales")
+load_or_install("grid")
+load_or_install("gridExtra")
+load_or_install("stringr")
+load_or_install("tools")
+
+draw_grid <- function(sets, f) {
+  graphs <- lapply(sets, FUN=f)
+  #print(graphs)
+  #remove_label <- function(g) { g + theme(legend.position = "none") }
+  #graphs <- lapply(graphs, FUN=remove_label)
+  do.call(grid.arrange, graphs)
+}
+```
+
+```{r data, include=FALSE}
+timing_log <- read_csv("timing_log.csv")
+#timing_log <- read_csv("~/Workspace/FMLBench/timing_log.csv")
+```
+This report describes the results of a performance comparison between multiple implementations of the FML language using a suite of benchmark programs.
+
+## System description
+
+The benchmark was executed using the followins system specs.
+
+| Parameter        | Spec                                      | Notes                                                    |
+| :----            | :-------------                            | :--------------------------------------------            |
+| Processor        | Apple M1                                  |                                                          |
+| Memory           | 16GB DDR4                                 |                                                          |
+| OS & kernel      | macOS 13.1                                |                                                          |
+
+## Benchmarks
+
+The experiment was run using four benchmark programs. Each benchmark was executed 10 times (iterations 1-10).
+
+| Label               | Description           | URL                                                                       |
+| :-------            | :-------------        | :----------------------------------------------                           |
+| `nested_loops`      | Nested loops          | https://github.com/kondziu/FMLBench/blob/main/benchmarks/nested_loops.fml |
+| `langtons_ant`      | Langton's ant         | https://github.com/kondziu/FMLBench/blob/main/benchmarks/langtons_ant.fml |
+| `brainfuck`         | Brainfuck interpreter | https://github.com/kondziu/FMLBench/blob/main/benchmarks/brainfuck.fml    |
+| `sudoku`            | Sudoku solver         | https://github.com/kondziu/FMLBench/blob/main/benchmarks/sudoku.fml       |
+
+### Nested loops
+
+A very plain and simple benchmark - just a few nested loops doing nothing. It's meant to test allocation of integers and methods operating on them (`+`, `<`). Because of its simplicity a lot of it could be optimized by a JIT. Though the fact that it consists of a single (entry point) function, might make it problematic for the simplest method JITs.
+
+### Langton's ant
+
+An ant moves on a world of square tiles. The ant has position on a specific tile and an orientation (up, down, left, right). The tiles are initiall all white, but each tile can be either black or white. The program runs for 201 steps. In each step the ant moves one tile according to the following rules.
+
+* If the ant is on a while tile, it changes the tile's color to black, rotates clockwise and moves one tile forward.
+* If the ant is on a black tile, it changes the tile's color to white, rotates counterclockwise and moves one tile forward.
+
+The board and the ant are printed after each step. The world starts empty and expands whenever the ant moves to a new tile.
+
+[[wiki]](https://en.wikipedia.org/wiki/Langton%27s_ant)
+
+### Brainfuck interpreter
+
+An implementation of the Brainfuck language executing a specific program.
+
+The language contains 8 instructions `.,<>[]+-`, 7 of which are expressable in FML (FML cannot read from stdin, preventing it from implementing `,`). The interpreter has a memory of 512 integers and a memory pointer. The interpreter moves the pointer to the left and right (`<` and `>`), increments and decrements the values at the pointer (`+` and `-`), and prints out the value of a cell as ASCII (`.`). `[` and `]` imeplement loops: `[` checks if the value of the cell at the pointer is 0, and proceeds to a matching `]` if it is or executes the next statement if it isn't. `]` returns to the matching `[`.
+
+In this implementation the memory consists of 512 32bit integers. The memory pointer is initially positioned in the middle.
+
+The program executed by the benchmark prints out a poem in 429 instructions.
+
+[[wiki]](https://en.wikipedia.org/wiki/Brainfuck)
+
+### Sudoku solver
+
+A brute force sudoku solver. It starts from the top-left corner of the board, adds a number from 1-9 (in order) in the first available empty spot and checks whether the board is still valid. It continues until the end of the board and backtracks to if the board becomes invalid at any point.
+
+[[wiki]](https://en.wikipedia.org/wiki/Sudoku)
+
+## Implementations
+
+The experiment was run using the following implementations of the FML language.
+
+| Label              | Description                                                   | URL                                            |
+| :-----             | :-----------------------------------------                    | :-------------------                           |
+| `/cfml/fml`        | The reference FML implementation.                             | https://gitlab.fit.cvut.cz/vlasami6/cfml       |
+| ast                | run method defaults to ast interpretation                     |                                                |
+| bc                 | run method defaults to compilation & bc interpretation & gc   |                                                |
+
+The `/cfml/fml` implementation is written in C. The stack consists of a bytecode compiler and a bytecode interpreter. Execution times include parsing, compilation, and execution. The implementation does not garbage collect, so it does not incur garbage-collection-related overheads.
+
+My implementations use the latest version in `feat/gc`.
+
+Meson was settuped with: `meson setup build --buildtype release`.
+
+The bc version uses garbage collection, the garbage collector is a simple mark-and-sweep collector. The collector is invoked after
+when heap alloc fail due to lack of memory. The collector is not incremental, so it stops the world.
+
+The ast version has fixed amount of memory of 4000MiB. The garbage collector is not used.
+
+## Correctness
+
+The benchmarks were sanity checked after execution by comparing outputs.
+
+```{r correctness, echo=FALSE, fig.width=15}
+correctness1 <- setNames(c("#bd320b","#21e6ff"), c(FALSE, TRUE))
+correctness2 <- setNames(c("red","blue"), c(FALSE, TRUE))
+correctness_for_implementation <- function(implementation, rows=1) {
+  timing_log %>%
+    filter(`FML implementation` == !!implementation)  %>%
+    ggplot(aes(x=iteration, y=benchmark)) +
+    geom_tile(aes(fill=correct, color=correct, width=0.7, height=0.7), linewidth=0.5) +
+    scale_x_discrete(breaks=1:10, limits=factor(1:10)) +
+    scale_fill_manual(values=correctness1) +
+    scale_color_manual(values=correctness2) +
+    #scale_fill_continuous(function(x) {print(x); ifelse(x < 0, "#bd320b","#21e6ff")}) +
+    theme_dark() +
+    theme(panel.grid.major = element_blank(), axis.ticks = element_blank(), axis.title.y = element_blank(), legend.position = "none") +
+    ggtitle(implementation)
+}
+implementations <- timing_log %>% pull(`FML implementation`) %>% unique()
+draw_grid(implementations, correctness_for_implementation)
+```
+
+#### Observations
+
+Interpreters output the expected results.
+
+## Execution time
+
+```{r execution-time, echo=FALSE, fig.width=10, fig.height=25}
+violins_for_benchmark <- function (benchmark, title) {
+  ggplot(timing_log %>% filter(benchmark==!!benchmark), aes(x=`FML implementation`, y=millis)) +
+    geom_violin(trim=FALSE, aes(color=`FML implementation`, fill=`FML implementation`)) +
+    theme_dark() +
+    theme(panel.grid.major = element_blank(), axis.ticks.x = element_blank(), legend.position = "none", axis.title.x = element_blank()) +
+    #expand_limits(y = 0) +
+    ylab("Elapsed time [ms]") +
+    ggtitle(title)
+}
+
+grid.arrange(
+  violins_for_benchmark("nested_loops", "Nested loops"),
+  violins_for_benchmark("langtons_ant", "Langton's ant"),
+  violins_for_benchmark("brainfuck", "Brainfuck interpreter"),
+  violins_for_benchmark("sudoku", "Sudoku solver"),
+  ncol=1)
+```
+
+#### Observations
+
+The ast interpreter is extremely slow. The main reason probably is the lack of cache utilization. Additional major overhead
+is searching for variable names, it is linear and goes from the top of the frame stack to the bottom.
+
+The bc interpreter is slower than the reference in all tests, but in the brainfuck.fml test. In other tests it is
+circa 2-times slower. As we can see from the memory graphs, the reference doesn't trigger the gc. The bc interpreter,
+in the sudoku test, triggers the gc 9 times. This in itself could be one of the main reason for the performance difference.
+
+## Memory usage
+
+```{r memory_prep, echo=FALSE, message=FALSE, results='hide'}
+
+area_for_single_execution <- function(log_file, show_gc_time=FALSE) {
+  matches <- str_match(log_file, regex("heap_log/heap:([^:]*):([^:]*).csv"))
+  benchmark <- str_replace_all(matches[2], "\\\\", "/")
+  implementation <- str_replace_all(matches[3], "\\\\", "/")
+
+  #cat(paste0("Preparing graph for: ", benchmark , " + ", implementation, "\n"));
+  #browser()
+
+  heap_log <- read_csv(log_file, col_types=cols()) %>% mutate(elapsed=timestamp - min(timestamp))
+  #%>% mutate(gc = ifelse(event=="B", timestamp, as.integer(NA)))
+  max_heap_size <- heap_log %>% pull(heap) %>% max
+  #heap_log <- heap_log %>% mutate(heap = ifelse(event == "S", 0, heap))
+
+  graph <- ggplot (heap_log, aes(x=elapsed, y=heap))
+  #geom_rect(xmin = -Inf, xmax = 0,   ymin = -Inf, ymax = 0,   fill = "red")
+
+  if (show_gc_time) {
+    gc_begin <- heap_log %>% filter(event == "B") %>%
+      rename(start_timestamp=timestamp, start_event=event, start_heap=heap, start_elapsed=elapsed)
+    gc_end <- heap_log %>% filter(event == "A") %>%
+      rename(end_timestamp=timestamp, end_event=event, end_heap=heap, end_elapsed=elapsed)
+    if (gc_begin %>% count %>% pull(n) != gc_end %>% count %>% pull(n)) {
+      warning(paste0(
+        "The number of GC start events (B) is different than GC end events (A): ",
+        gc_begin %>% count %>% pull(n), "!=", gc_end %>% count %>% pull(n)
+      ))
+    }
+    gc <- cbind(gc_begin, gc_end)
+    graph <- graph + geom_rect(data = gc, inherit.aes = FALSE,
+      aes(xmin = start_elapsed, xmax = end_elapsed, ymin = -Inf, ymax = +Inf),
+      color = "white")
+  }
+
+  graph <- graph + geom_area() #+ geom_vline(aes(xintercept=gc))
+  # if (show_max) {
+  #   graph <- graph + geom_hline(yintercept=max_heap_size, linetype="dashed", color = "white")
+  # }
+
+  graph +
+    theme_dark() +
+    theme(panel.grid.major = element_blank(), axis.ticks.x = element_blank(), legend.position = "none") +
+    scale_y_continuous(labels=function(x)
+      ifelse(x >= 1024 * 1024 * 1014, paste0(as.integer(x / 1024 / 1024 / 1024),"GB"),
+             ifelse(x >= 1024 * 1024, paste0(as.integer(x / 1024 / 1024), "MB"),
+                    ifelse(x >= 1024, paste0(as.integer(x / 1024), "KB"),
+                           paste0(x, "B"))))) +
+    scale_x_continuous(labels=function(x)
+      ifelse(x >= 60 * 1000 * 1000 * 1000, paste0(as.integer(x / 60 / 1000 / 1000 / 1000),"min"),
+          ifelse(x >= 1000 * 1000 * 1000, paste0(as.integer(x / 1000 / 1000 / 1000),"s"),
+                 ifelse(x >= 1000 * 1000, paste0(as.integer(x / 1000 / 1000), "ms"),
+                        ifelse(x >= 1000, paste0(as.integer(x / 1000), "μs"),
+                               paste0(x, "ns")))))) +
+    xlab("Elapsed time") +
+    ylab("Heap size") +
+    ggtitle(paste0("Memory usage in ", benchmark)) +
+    labs(subtitle=implementation)
+}
+
+plots <- list()
+all_files <- list.files(path="heap_log", recursive=TRUE, full.names=TRUE)
+files <- all_files[grep(all_files, pattern=".*(nested|sudoku).*.csv$")]
+for (file in files) {
+  plots[[length(plots) + 1]] <- area_for_single_execution(file, show_gc_time=TRUE) # set show_gc_time to TRUE to show (very slim) white rectangles indicating time spent inside GC, or FALSE to get rid of them
+}
+implementation_cnt = length(plots) / 2
+```
+
+```{r memory, echo=FALSE, fig.width=10, fig.height=4 * implementation_cnt}
+if (length(plots) > 0) {
+  #do.call(grid.arrange, plots)
+  grid.arrange(grobs=plots, nrow=implementation_cnt)
+}
+```
+
+#### Observations
+
+The utilization of memory grows linearly for all the interpreters.
+
+From the graphs for bc we can see that after the gc is triggered, the memory usage drops to almost zero, which
+is interesting. Additionally, the final utilization is almost 100Mib, which is the theoretical maximum. This could imply
+that fragmentation is not a problem for bc.
+
+Also, the time to perform the gc is almost the same each time which makes sense, as the gc always parses the whole
+heap.
